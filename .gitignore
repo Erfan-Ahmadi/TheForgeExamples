@@ -315,6 +315,7 @@ __pycache__/
 *.xsd.cs
 
 # Third-Party
+!third-party/get_third_party.sh
 third-party/
 
 # OpenCover UI analysis results
