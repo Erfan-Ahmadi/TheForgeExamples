@@ -1,21 +1,9 @@
-#include "Common_3/OS/Interfaces/ICameraController.h"
-#include "Common_3/OS/Interfaces/IApp.h"
-#include "Common_3/Renderer/IRenderer.h"
-#include "Common_3/Renderer/ResourceLoader.h"
+#include "../common.h"
 
-//Input
-#include "Common_3/OS/Input/InputSystem.h"
-#include "Common_3/OS/Input/InputMappings.h"
-
-//Math
-#include "Common_3/OS/Math/MathTypes.h"
-
-//ui
-#include "Middleware_3/UI/AppUI.h"
-
-const uint32_t gImageCount = 3;
-bool           bToggleMicroProfiler = false;
-bool           bPrevToggleMicroProfiler = false;
+const uint32_t	gImageCount = 3;
+bool			bToggleMicroProfiler = false;
+bool			bPrevToggleMicroProfiler = false;
+uint32_t		gNumQuadPoints;
 
 Renderer* pRenderer = NULL;
 
@@ -50,19 +38,18 @@ GuiComponent* pGui = NULL;
 
 const char* pTexturesFileNames[] = { "Quad" };
 
-//TODO: Correct Paths
 const char* pszBases[FSR_Count] = {
-	"../../../src/01_Transformations/",     // FSR_BinShaders
-	"../../../src/01_Transformations/",     // FSR_SrcShaders
-	"../../../UnitTestResources/",          // FSR_Textures
-	"../../../UnitTestResources/",          // FSR_Meshes
-	"../../../UnitTestResources/",          // FSR_Builtin_Fonts
-	"../../../src/01_Transformations/",     // FSR_GpuConfig
-	"",                                     // FSR_Animation
-	"",                                     // FSR_Audio
-	"",                                     // FSR_OtherFiles
-	"../../../../../Middleware_3/Text/",    // FSR_MIDDLEWARE_TEXT
-	"../../../../../Middleware_3/UI/",      // FSR_MIDDLEWARE_UI
+	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_BinShaders
+	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_SrcShaders
+	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Textures
+	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Meshes
+	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
+	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_GpuConfig
+	"",																				// FSR_Animation
+	"",																				// FSR_Audio
+	"",																				// FSR_OtherFiles
+	"../../../../../The-Forge/Middleware_3/Text/",									// FSR_MIDDLEWARE_TEXT
+	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
 
 class HelloQuad : public IApp
@@ -120,15 +107,23 @@ public:
 									ADDRESS_MODE_CLAMP_TO_EDGE };
 		addSampler(pRenderer, &samplerDesc, &pSampler);
 		
+
+		// Get VBuffer Data
+		float* quadPoints;
+		meshes::generateQuadPoints(&quadPoints, &gNumQuadPoints);
+		uint64_t quadDataSize = gNumQuadPoints * sizeof(float);
+
 		// Vertex Buffer
 		BufferLoadDesc quadVBufferDesc = {};
 		quadVBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
 		quadVBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
-		//quadVBufferDesc.mDesc.mSize = size;
-		//quadVBufferDesc.mDesc.mVertexStride = stride;
-		//quadVBufferDesc.pData = data;
+		quadVBufferDesc.mDesc.mSize = quadDataSize;
+		quadVBufferDesc.mDesc.mVertexStride = sizeof(float) * 6;
+		quadVBufferDesc.pData = &quadPoints;
 		quadVBufferDesc.ppBuffer = &pQuadVertexBuffer;
 		addResource(&quadVBufferDesc);
+
+		conf_free(quadPoints);
 
 		// Resource Binding
 		Shader* shaders = { pQuadShader };
@@ -165,16 +160,14 @@ public:
 
 		gAppUI.LoadFont("TitilliumText/TitilliumText-Bold.otf", FSR_Builtin_Fonts);
 
-    GuiDesc guiDesc = {};
-    float   dpiScale = getDpiScale().x;
-    guiDesc.mStartSize = vec2(140.0f / dpiScale, 320.0f / dpiScale);
-    guiDesc.mStartPosition = vec2( mSettings.mWidth - guiDesc.mStartSize.getX() * 1.1f, guiDesc.mStartSize.getY() * 0.5f);
+		GuiDesc guiDesc = {};
+		float   dpiScale = getDpiScale().x;
+		guiDesc.mStartSize = vec2(140.0f / dpiScale, 320.0f / dpiScale);
+		guiDesc.mStartPosition = vec2( mSettings.mWidth - guiDesc.mStartSize.getX() * 1.1f, guiDesc.mStartSize.getY() * 0.5f);
 
-    pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
+		pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
 
-    pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &bToggleMicroProfiler));
-
-
+		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &bToggleMicroProfiler));
 
 		// Camera
 		CameraMotionParameters cmp{ 160.0f, 600.0f, 200.0f };
@@ -242,7 +235,7 @@ public:
 	}
 
 	const char* GetName() { return "01_HelloQuad"; }
-	
+
 	static bool cameraInputEvent(const ButtonData* data)
 	{
 		pCameraController->onInputEvent(data);

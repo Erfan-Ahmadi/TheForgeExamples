@@ -29,6 +29,9 @@
   <ItemGroup>
     <ClCompile Include="..\..\..\src\01_HelloQuad\HelloQuad.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\src\common.h" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{8c55733b-7d95-465f-8526-38bbb8e7d24b}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
