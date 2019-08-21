@@ -332,3 +332,7 @@ ASALocalRun/
 
 # MFractors (Xamarin productivity tool) working folder 
 .mfractor/
+/third-party/The-Forge-Lib/ReleaseDx/Intermediate
+/third-party/The-Forge-Lib/DebugVk/Intermediate
+/third-party/The-Forge-Lib/DebugDx11/Intermediate
+/third-party/The-Forge-Lib/DebugDx/Intermediate

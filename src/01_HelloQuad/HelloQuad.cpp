@@ -13,18 +13,20 @@ Cmd** ppCmds = NULL;
 Sampler* pSampler = NULL;
 RasterizerState* pRastState = NULL;
 DepthState* pDepthState = NULL;
+RenderTarget* pDepthBuffer = NULL;
 
 Fence* pRenderCompleteFences[gImageCount] = { NULL };
 Semaphore* pRenderCompleteSemaphores[gImageCount] = { NULL };
 Semaphore* pImageAquiredSemaphore = NULL;
 
-SwapChain* swapChain = NULL;
+SwapChain* pSwapChain = NULL;
 Pipeline* pGraphicsPipeline = NULL;
 RootSignature* pRootSignature = NULL;
 
 Shader* pQuadShader = NULL;
 Texture* pQuadTexture = NULL;
 Buffer* pQuadVertexBuffer = NULL;
+Pipeline* pQuadPipeline = NULL;
 
 uint32_t			gFrameIndex = 0;
 
@@ -106,7 +108,7 @@ public:
 									ADDRESS_MODE_CLAMP_TO_EDGE,
 									ADDRESS_MODE_CLAMP_TO_EDGE };
 		addSampler(pRenderer, &samplerDesc, &pSampler);
-		
+
 
 		// Get VBuffer Data
 		float* quadPoints;
@@ -139,7 +141,7 @@ public:
 
 		DescriptorBinderDesc descriptorBinderDescs[1] = { {pRootSignature} };
 		addDescriptorBinder(pRenderer, 0, 1, descriptorBinderDescs, &pDescriptorBinder);
-		
+
 		// Rasterizer State
 		RasterizerStateDesc rasterizerStateDesc = {};
 		rasterizerStateDesc.mCullMode = CULL_MODE_FRONT;
@@ -151,9 +153,9 @@ public:
 		depthStateDesc.mDepthWrite = true;
 		depthStateDesc.mDepthFunc = CMP_LEQUAL;
 		addDepthState(pRenderer, &depthStateDesc, &pDepthState);
-		
-	finishResourceLoading();
-	
+
+		finishResourceLoading();
+
 		// GUI
 		if (!gAppUI.Init(pRenderer))
 			return false;
@@ -163,7 +165,7 @@ public:
 		GuiDesc guiDesc = {};
 		float   dpiScale = getDpiScale().x;
 		guiDesc.mStartSize = vec2(140.0f / dpiScale, 320.0f / dpiScale);
-		guiDesc.mStartPosition = vec2( mSettings.mWidth - guiDesc.mStartSize.getX() * 1.1f, guiDesc.mStartSize.getY() * 0.5f);
+		guiDesc.mStartPosition = vec2(mSettings.mWidth - guiDesc.mStartSize.getX() * 1.1f, guiDesc.mStartSize.getY() * 0.5f);
 
 		pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
 
@@ -220,18 +222,129 @@ public:
 
 	bool Load()
 	{
+		if (addSwapChain())
+			return false;
+		if (addDepthBuffer())
+			return false;
+
+		if (!gAppUI.Load(pSwapChain->ppSwapchainRenderTargets))
+			return false;
+
+		//layout and pipeline for sphere draw
+		VertexLayout vertexLayout = {};
+		vertexLayout.mAttribCount = 2;
+		vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
+		vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
+		vertexLayout.mAttribs[0].mBinding = 0;
+		vertexLayout.mAttribs[0].mLocation = 0;
+		vertexLayout.mAttribs[0].mOffset = 0;
+		vertexLayout.mAttribs[1].mSemantic = SEMANTIC_NORMAL;
+		vertexLayout.mAttribs[1].mFormat = ImageFormat::RGB32F;
+		vertexLayout.mAttribs[1].mBinding = 0;
+		vertexLayout.mAttribs[1].mLocation = 1;
+		vertexLayout.mAttribs[1].mOffset = 3 * sizeof(float);
+
+		PipelineDesc desc = {};
+		desc.mType = PIPELINE_TYPE_GRAPHICS;
+		GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
+		pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
+		pipelineSettings.mRenderTargetCount = 1;
+		pipelineSettings.pDepthState = pDepthState;
+		pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
+		pipelineSettings.pSrgbValues = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSrgb;
+		pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
+		pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
+		pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
+		pipelineSettings.pRootSignature = pRootSignature;
+		pipelineSettings.pShaderProgram = pQuadShader;
+		pipelineSettings.pVertexLayout = &vertexLayout;
+		pipelineSettings.pRasterizerState = pRastState;
+		addPipeline(pRenderer, &desc, &pQuadPipeline);
+
+		return true;
 	}
 
 	void Unload()
 	{
+		waitQueueIdle(pGraphicsQueue);
+
+		gAppUI.Unload();
+
+		removePipeline(pRenderer, pQuadPipeline);
+
+		removeSwapChain(pRenderer, pSwapChain);
+		removeRenderTarget(pRenderer, pDepthBuffer);
 	}
 
-	void Update()
+	void Update(float deltaTime)
 	{
+		pCameraController->update(deltaTime);
 	}
 
 	void Draw()
 	{
+		acquireNextImage(pRenderer, pSwapChain, pImageAquiredSemaphore, NULL, &gFrameIndex);
+
+		RenderTarget* pRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
+		Semaphore* pRenderCompleteSemaphore = pRenderCompleteSemaphores[gFrameIndex];
+		Fence* pRenderCompleteFence = pRenderCompleteFences[gFrameIndex];
+
+		FenceStatus fenceStatus;
+		getFenceStatus(pRenderer, pRenderCompleteFence, &fenceStatus);
+		if (fenceStatus == FENCE_STATUS_INCOMPLETE)
+			waitForFences(pRenderer, 1, &pRenderCompleteFence);
+
+		LoadActionsDesc loadActions = {};
+		loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
+		loadActions.mClearColorValues[0].r = 1.0f;
+		loadActions.mClearColorValues[0].g = 1.0f;
+		loadActions.mClearColorValues[0].b = 0.0f;
+		loadActions.mClearColorValues[0].a = 0.0f;
+		loadActions.mLoadActionDepth = LOAD_ACTION_CLEAR;
+		loadActions.mClearDepth.depth = 1.0f;
+		loadActions.mClearDepth.stencil = 0;
+
+		Cmd* cmd = ppCmds[gFrameIndex];
+		beginCmd(cmd);
+		{
+
+		}
+		endCmd(cmd);
+
+		queueSubmit(pGraphicsQueue, 1, &cmd, pRenderCompleteFence, 1, &pImageAquiredSemaphore, 1, &pRenderCompleteSemaphore);
+		queuePresent(pGraphicsQueue, pSwapChain, gFrameIndex, 1, &pRenderCompleteSemaphore);
+	}
+
+	bool addSwapChain()
+	{
+		SwapChainDesc swapChainDesc = {};
+		swapChainDesc.mWindowHandle = pWindow->handle;
+		swapChainDesc.mPresentQueueCount = 1;
+		swapChainDesc.ppPresentQueues = &pGraphicsQueue;
+		swapChainDesc.mImageCount = gImageCount;
+		swapChainDesc.mSampleCount = SAMPLE_COUNT_1;
+		swapChainDesc.mEnableVsync = false;
+		swapChainDesc.mWidth = mSettings.mWidth;
+		swapChainDesc.mHeight = mSettings.mHeight;
+		swapChainDesc.mColorFormat = getRecommendedSwapchainFormat(true);
+		::addSwapChain(pRenderer, &swapChainDesc, &pSwapChain);
+		return pSwapChain != NULL;
+	}
+
+	bool addDepthBuffer()
+	{
+		RenderTargetDesc depthRT = {};
+		depthRT.mArraySize = 1;
+		depthRT.mClearValue.depth = 1.0f;
+		depthRT.mClearValue.stencil = 0.0f;
+		depthRT.mFormat = ImageFormat::D32F;
+		depthRT.mWidth = mSettings.mWidth;
+		depthRT.mHeight = mSettings.mHeight;
+		depthRT.mSampleCount = SAMPLE_COUNT_1;
+		depthRT.mSampleQuality = 0;
+		::addRenderTarget(pRenderer, &depthRT, &pDepthBuffer);
+
+		return pDepthBuffer != NULL;
 	}
 
 	const char* GetName() { return "01_HelloQuad"; }
