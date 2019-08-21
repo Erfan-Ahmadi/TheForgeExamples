@@ -32,6 +32,12 @@
   <ItemGroup>
     <ClInclude Include="..\..\..\src\common.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\..\src\01_HelloQuad\Shaders\D3D12\quad.frag" />
+    <None Include="..\..\..\src\01_HelloQuad\Shaders\D3D12\quad.vert" />
+    <None Include="..\..\..\src\01_HelloQuad\Shaders\Vulkan\quad.frag" />
+    <None Include="..\..\..\src\01_HelloQuad\Shaders\Vulkan\quad.vert" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{8c55733b-7d95-465f-8526-38bbb8e7d24b}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
@@ -154,7 +160,7 @@
       <AdditionalIncludeDirectories>
       </AdditionalIncludeDirectories>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
@@ -195,7 +201,7 @@
       <AdditionalIncludeDirectories>
       </AdditionalIncludeDirectories>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
@@ -236,7 +242,7 @@
       <AdditionalIncludeDirectories>
       </AdditionalIncludeDirectories>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <MultiProcessorCompilation>
       </MultiProcessorCompilation>
     </ClCompile>
@@ -280,7 +286,7 @@
       <AdditionalIncludeDirectories>
       </AdditionalIncludeDirectories>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
@@ -325,7 +331,7 @@
       <AdditionalIncludeDirectories>
       </AdditionalIncludeDirectories>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
@@ -370,7 +376,7 @@
       <AdditionalIncludeDirectories>
       </AdditionalIncludeDirectories>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <MultiProcessorCompilation>
       </MultiProcessorCompilation>
     </ClCompile>

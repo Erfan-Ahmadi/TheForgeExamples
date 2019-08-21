@@ -24,4 +24,18 @@
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\..\src\01_HelloQuad\Shaders\Vulkan\quad.vert">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\01_HelloQuad\Shaders\Vulkan\quad.frag">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\01_HelloQuad\Shaders\D3D12\quad.vert">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
+    <None Include="..\..\..\src\01_HelloQuad\Shaders\D3D12\quad.frag">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
+  </ItemGroup>
 </Project>

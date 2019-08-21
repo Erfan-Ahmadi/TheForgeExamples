@@ -42,7 +42,7 @@ const char* pTexturesFileNames[] = { "Quad" };
 
 const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_BinShaders
-	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_SrcShaders
+	"../../../../src/01_HelloQuad",													// FSR_SrcShaders
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Textures
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Meshes
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
@@ -307,7 +307,21 @@ public:
 		Cmd* cmd = ppCmds[gFrameIndex];
 		beginCmd(cmd);
 		{
+			TextureBarrier textureBarriers[2] = {
+				{ pRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+				{ pRenderTarget->pTexture, RESOURCE_STATE_DEPTH_WRITE }
+			};
+			cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers, false);
 
+			cmdBindRenderTargets(cmd, 1, &pRenderTarget, pDepthBuffer, &loadActions, NULL, NULL, -1, -1);
+			cmdSetViewport(cmd, 0.0f, 0.0f, (float)pRenderTarget->mDesc.mWidth, (float)pRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+			cmdSetScissor(cmd, 0, 0, pRenderTarget->mDesc.mWidth, pRenderTarget->mDesc.mHeight);
+
+			cmdBindPipeline(cmd, pQuadPipeline);
+			{
+				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, 0);
+				cmdDraw(cmd, 6, 0);
+			}
 		}
 		endCmd(cmd);
 
@@ -355,3 +369,5 @@ public:
 		return true;
 	}
 };
+
+DEFINE_APPLICATION_MAIN(HelloQuad)
