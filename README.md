@@ -2,7 +2,7 @@
 
 - Implemntations :
   - [x] Draw Textured Quad
-  - [ ] Intancing
+  - [ ] Instancing
   - [ ] Load Model
   - [ ] Calculate Normals
   - [ ] Lighting (Blinn-Phong)
