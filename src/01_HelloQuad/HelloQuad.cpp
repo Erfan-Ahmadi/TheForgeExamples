@@ -38,11 +38,11 @@ ICameraController* pCameraController = NULL;
 
 GuiComponent* pGui = NULL;
 
-const char* pTexturesFileNames[] = { "Quad" };
+const char* pTexturesFileNames[] = { "Skybox_front5" };
 
 const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_BinShaders
-	"../../../../src/01_HelloQuad/",													// FSR_SrcShaders
+	"../../../../src/01_HelloQuad/",												// FSR_SrcShaders
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Textures
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Meshes
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
@@ -110,23 +110,45 @@ public:
 		addSampler(pRenderer, &samplerDesc, &pSampler);
 
 
-		// Get VBuffer Data
-		float* pPoints;
-		meshes::generateQuadPoints(&pPoints, &gNumQuadPoints);
+		float pPoints[]
+		{
+			+0.5f, +0.5f, +1.0f,	// Vertex Top Right
+			0.0f, 0.0f, -1.0f  ,	// Normal 
+			1.0f, 0.0f,				// TextureCoord	
 
-		uint64_t quadDataSize = 36 * sizeof(float);
+			+0.5f, -0.5f, +1.0f,	// Vertex Bottom Right
+			0.0f, 0.0f, -1.0f  ,	// Normal
+			1.0f, 1.0f,				// TextureCoord
+
+			-0.5f, +0.5f, +1.0f,	// Vertex Top Left
+			0.0f, 0.0f, -1.0f  ,	// Normal
+			0.0f, 0.0f,				// TextureCoord
+
+			-0.5f, +0.5f, +1.0f,	// Vertex Top Left
+			0.0f, 0.0f, -1.0f  ,	// Normal
+			0.0f, 0.0f,				// TextureCoord
+
+			+0.5f, -0.5f, +1.0f,	// Vertex Bottom Right
+			0.0f, 0.0f, -1.0f  ,	// Normal
+			1.0f, 1.0f,				// TextureCoord
+
+			-0.5f, -0.5f, +1.0f,	// Vertex Bottom Left
+			0.0f, 0.0f, -1.0f,		// Normal
+			0.0f, 1.0f,				// TextureCoord
+		};
+
+
+		uint64_t quadDataSize = 6 * 8 * sizeof(float);
 
 		// Vertex Buffer
 		BufferLoadDesc quadVBufferDesc = {};
 		quadVBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
 		quadVBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
 		quadVBufferDesc.mDesc.mSize = quadDataSize;
-		quadVBufferDesc.mDesc.mVertexStride = sizeof(float) * 6;
+		quadVBufferDesc.mDesc.mVertexStride = sizeof(float) * 8;
 		quadVBufferDesc.pData = pPoints;
 		quadVBufferDesc.ppBuffer = &pQuadVertexBuffer;
 		addResource(&quadVBufferDesc);
-
-		conf_free(pPoints);
 
 		// Resource Binding
 		Shader* shaders = { pQuadShader };
@@ -196,11 +218,11 @@ public:
 		gAppUI.Exit();
 
 		removeResource(pQuadVertexBuffer);
-		//removeResource(pQuadTexture);
+		removeResource(pQuadTexture);
 
 		removeDescriptorBinder(pRenderer, pDescriptorBinder);
 
-		//removeSampler(pRenderer, pSampler);
+		removeSampler(pRenderer, pSampler);
 		removeShader(pRenderer, pQuadShader);
 		removeRootSignature(pRenderer, pRootSignature);
 
@@ -216,7 +238,6 @@ public:
 
 		removeCmd_n(pCmdPool, gImageCount, ppCmds);
 		removeCmdPool(pRenderer, pCmdPool);
-
 
 		removeResourceLoaderInterface(pRenderer);
 		removeQueue(pGraphicsQueue);
@@ -234,17 +255,25 @@ public:
 
 		//layout and pipeline for sphere draw
 		VertexLayout vertexLayout = {};
-		vertexLayout.mAttribCount = 2;
+		vertexLayout.mAttribCount = 3;
+
 		vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
 		vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
 		vertexLayout.mAttribs[0].mBinding = 0;
 		vertexLayout.mAttribs[0].mLocation = 0;
 		vertexLayout.mAttribs[0].mOffset = 0;
+
 		vertexLayout.mAttribs[1].mSemantic = SEMANTIC_NORMAL;
 		vertexLayout.mAttribs[1].mFormat = ImageFormat::RGB32F;
 		vertexLayout.mAttribs[1].mBinding = 0;
 		vertexLayout.mAttribs[1].mLocation = 1;
 		vertexLayout.mAttribs[1].mOffset = 3 * sizeof(float);
+
+		vertexLayout.mAttribs[2].mSemantic = SEMANTIC_TEXCOORD0;
+		vertexLayout.mAttribs[2].mFormat = ImageFormat::RG32F;
+		vertexLayout.mAttribs[2].mBinding = 0;
+		vertexLayout.mAttribs[2].mLocation = 2;
+		vertexLayout.mAttribs[2].mOffset = 6 * sizeof(float);
 
 		PipelineDesc desc = {};
 		desc.mType = PIPELINE_TYPE_GRAPHICS;
@@ -322,11 +351,14 @@ public:
 
 			cmdBindPipeline(cmd, pQuadPipeline);
 			{
-				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 0, nullptr);
+				DescriptorData params[1] = {};
+				params[0].pName = "Texture";
+				params[0].ppTextures = &pQuadTexture;
+				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 1, params);
 				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
 				cmdDraw(cmd, 6, 0);
 			}
-			
+
 			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
 			cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
 

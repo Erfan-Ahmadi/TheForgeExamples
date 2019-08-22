@@ -2,17 +2,18 @@ struct VSInput
 {
     float4 Position : POSITION;
     float4 Normal : NORMAL;
+    float2 TexCoord : TEXCOORD;
 };
 
 struct VSOutput {
 	float4 Position : SV_POSITION;
-    float4 Color : COLOR;
+    float2 TexCoord : TEXCOORD;
 };
 
 VSOutput main(VSInput input)
 {
 	VSOutput result;
 	result.Position = input.Position;
-	result.Color = float4(1.0f, 1.0f, 1.0f, 1.0f);
+	result.TexCoord = input.TexCoord;
 	return result;
 }
