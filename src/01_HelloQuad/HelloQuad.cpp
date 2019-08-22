@@ -42,7 +42,7 @@ const char* pTexturesFileNames[] = { "Quad" };
 
 const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_BinShaders
-	"../../../../src/01_HelloQuad",													// FSR_SrcShaders
+	"../../../../src/01_HelloQuad/",													// FSR_SrcShaders
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Textures
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Meshes
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
@@ -111,9 +111,10 @@ public:
 
 
 		// Get VBuffer Data
-		float* quadPoints;
-		meshes::generateQuadPoints(&quadPoints, &gNumQuadPoints);
-		uint64_t quadDataSize = gNumQuadPoints * sizeof(float);
+		float* pPoints;
+		meshes::generateQuadPoints(&pPoints, &gNumQuadPoints);
+
+		uint64_t quadDataSize = 36 * sizeof(float);
 
 		// Vertex Buffer
 		BufferLoadDesc quadVBufferDesc = {};
@@ -121,11 +122,11 @@ public:
 		quadVBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
 		quadVBufferDesc.mDesc.mSize = quadDataSize;
 		quadVBufferDesc.mDesc.mVertexStride = sizeof(float) * 6;
-		quadVBufferDesc.pData = &quadPoints;
+		quadVBufferDesc.pData = pPoints;
 		quadVBufferDesc.ppBuffer = &pQuadVertexBuffer;
 		addResource(&quadVBufferDesc);
 
-		conf_free(quadPoints);
+		conf_free(pPoints);
 
 		// Resource Binding
 		Shader* shaders = { pQuadShader };
@@ -195,9 +196,11 @@ public:
 		gAppUI.Exit();
 
 		removeResource(pQuadVertexBuffer);
-		removeResource(pQuadTexture);
+		//removeResource(pQuadTexture);
 
-		removeSampler(pRenderer, pSampler);
+		removeDescriptorBinder(pRenderer, pDescriptorBinder);
+
+		//removeSampler(pRenderer, pSampler);
 		removeShader(pRenderer, pQuadShader);
 		removeRootSignature(pRenderer, pRootSignature);
 
@@ -222,11 +225,10 @@ public:
 
 	bool Load()
 	{
-		if (addSwapChain())
+		if (!addSwapChain())
 			return false;
-		if (addDepthBuffer())
+		if (!addDepthBuffer())
 			return false;
-
 		if (!gAppUI.Load(pSwapChain->ppSwapchainRenderTargets))
 			return false;
 
@@ -296,9 +298,9 @@ public:
 
 		LoadActionsDesc loadActions = {};
 		loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
-		loadActions.mClearColorValues[0].r = 1.0f;
-		loadActions.mClearColorValues[0].g = 1.0f;
-		loadActions.mClearColorValues[0].b = 0.0f;
+		loadActions.mClearColorValues[0].r = 0.0f;
+		loadActions.mClearColorValues[0].g = 0.0f;
+		loadActions.mClearColorValues[0].b = 1.0f;
 		loadActions.mClearColorValues[0].a = 0.0f;
 		loadActions.mLoadActionDepth = LOAD_ACTION_CLEAR;
 		loadActions.mClearDepth.depth = 1.0f;
@@ -309,8 +311,9 @@ public:
 		{
 			TextureBarrier textureBarriers[2] = {
 				{ pRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
-				{ pRenderTarget->pTexture, RESOURCE_STATE_DEPTH_WRITE }
+				{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
 			};
+
 			cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers, false);
 
 			cmdBindRenderTargets(cmd, 1, &pRenderTarget, pDepthBuffer, &loadActions, NULL, NULL, -1, -1);
@@ -319,9 +322,14 @@ public:
 
 			cmdBindPipeline(cmd, pQuadPipeline);
 			{
-				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, 0);
+				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 0, nullptr);
+				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
 				cmdDraw(cmd, 6, 0);
 			}
+			
+			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
+			cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
+
 		}
 		endCmd(cmd);
 
@@ -352,6 +360,7 @@ public:
 		depthRT.mClearValue.depth = 1.0f;
 		depthRT.mClearValue.stencil = 0.0f;
 		depthRT.mFormat = ImageFormat::D32F;
+		depthRT.mDepth = 1;
 		depthRT.mWidth = mSettings.mWidth;
 		depthRT.mHeight = mSettings.mHeight;
 		depthRT.mSampleCount = SAMPLE_COUNT_1;

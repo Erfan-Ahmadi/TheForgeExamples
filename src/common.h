@@ -22,26 +22,26 @@ namespace meshes
 		const size_t num_points = 6 * 2;
 		float3* pPoints = (float3*)conf_malloc(num_points * sizeof(float3));
 
-		Vector3 topLeft = Vector3{ -0.5f, +0.5f, -1.0f };
-		Vector3 topRight = Vector3{ +0.5f, +0.5f, -1.0f };
-		Vector3 botLeft = Vector3{ -0.5f, -0.5f, -1.0f };
-		Vector3 botRight = Vector3{ +0.5f, -0.5f, -1.0f };
+		Vector3 topLeft		= Vector3{ -0.5f, +0.5f, +1.0f };
+		Vector3 topRight	= Vector3{ +0.5f, +0.5f, +1.0f };
+		Vector3 botLeft		= Vector3{ -0.5f, -0.5f, +1.0f };
+		Vector3 botRight	= Vector3{ +0.5f, -0.5f, +1.0f };
 
 		// Top Right Triangle
-		pPoints[0] = v3ToF3(topLeft);
-		pPoints[1] = float3(0.0f, 0.0f, 1.0f);
+		pPoints[0] = v3ToF3(topRight);
+		pPoints[1] = float3(0.0f, 0.0f, -1.0f);
 		pPoints[2] = v3ToF3(botRight);
-		pPoints[3] = float3(0.0f, 0.0f, 1.0f);
-		pPoints[4] = v3ToF3(topRight);
-		pPoints[5] = float3(0.0f, 0.0f, 1.0f);
+		pPoints[3] = float3(0.0f, 0.0f, -1.0f);
+		pPoints[4] = v3ToF3(topLeft);
+		pPoints[5] = float3(0.0f, 0.0f, -1.0f);
 
 		// Bot Left Triangle
 		pPoints[6] = v3ToF3(topLeft);
-		pPoints[7] = float3(0.0f, 0.0f, 1.0f);
-		pPoints[8] = v3ToF3(botLeft);
-		pPoints[9] = float3(0.0f, 0.0f, 1.0f);
-		pPoints[10] = v3ToF3(botRight);
-		pPoints[11] = float3(0.0f, 0.0f, 1.0f);
+		pPoints[7] = float3(0.0f, 0.0f, -1.0f);
+		pPoints[8] = v3ToF3(botRight);
+		pPoints[9] = float3(0.0f, 0.0f, -1.0f);
+		pPoints[10] = v3ToF3(botLeft);
+		pPoints[11] = float3(0.0f, 0.0f, -1.0f);
 
 		*pNumPoints = num_points;
 		(*ppQuadPoints) = (float*)pPoints;
@@ -54,21 +54,21 @@ namespace meshes
 		const size_t num_indices = 6;
 		float3* pPoints = (float3*)conf_malloc(num_points * sizeof(float3));
 
-		Vector3 topLeft = Vector3{ -0.5f, +0.5f, -1.0f };
-		Vector3 topRight = Vector3{ +0.5f, +0.5f, -1.0f };
-		Vector3 botLeft = Vector3{ -0.5f, -0.5f, -1.0f };
-		Vector3 botRight = Vector3{ +0.5f, -0.5f, -1.0f };
+		Vector3 topLeft		= Vector3{ -0.5f, +0.5f, -1.0f };
+		Vector3 topRight	= Vector3{ +0.5f, +0.5f, -1.0f };
+		Vector3 botLeft		= Vector3{ -0.5f, -0.5f, -1.0f };
+		Vector3 botRight	= Vector3{ +0.5f, -0.5f, -1.0f };
 
 		pPoints[0] = v3ToF3(topLeft);
-		pPoints[1] = float3(0.0f, 0.0f, 1.0f);
+		pPoints[1] = float3(0.0f, 0.0f, -1.0f);
 		pPoints[2] = v3ToF3(botRight);
-		pPoints[3] = float3(0.0f, 0.0f, 1.0f);
+		pPoints[3] = float3(0.0f, 0.0f, -1.0f);
 		pPoints[4] = v3ToF3(topRight);
-		pPoints[5] = float3(0.0f, 0.0f, 1.0f);
+		pPoints[5] = float3(0.0f, 0.0f, -1.0f);
 		pPoints[6] = v3ToF3(botLeft);
-		pPoints[7] = float3(0.0f, 0.0f, 1.0f);
+		pPoints[7] = float3(0.0f, 0.0f, -1.0f);
 
-		uint32_t pIndices[num_indices] = { 0, 1, 2, 0, 3, 2 };
+		uint32_t pIndices[num_indices] = { 2, 1, 0, 0, 1, 3 };
 
 
 		*pNumPoints = num_points;

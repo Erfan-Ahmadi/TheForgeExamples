@@ -14,4 +14,5 @@ VSOutput main(VSInput input)
 	VSOutput result;
 	result.Position = input.Position;
 	result.Color = float4(1.0f, 1.0f, 1.0f, 1.0f);
+	return result;
 }
