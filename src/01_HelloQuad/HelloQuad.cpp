@@ -12,6 +12,7 @@ CmdPool* pCmdPool = NULL;
 Cmd** ppCmds = NULL;
 Sampler* pSampler = NULL;
 RasterizerState* pRastState = NULL;
+RasterizerState* pSecondRastState = NULL;
 DepthState* pDepthState = NULL;
 RenderTarget* pDepthBuffer = NULL;
 
@@ -27,6 +28,7 @@ Shader* pQuadShader = NULL;
 Texture* pQuadTexture = NULL;
 Buffer* pQuadVertexBuffer = NULL;
 Pipeline* pQuadPipeline = NULL;
+Pipeline* pSecondQuadPipeline = NULL;
 
 uint32_t			gFrameIndex = 0;
 
@@ -191,6 +193,10 @@ public:
 		RasterizerStateDesc rasterizerStateDesc = {};
 		rasterizerStateDesc.mCullMode = CULL_MODE_FRONT;
 		addRasterizerState(pRenderer, &rasterizerStateDesc, &pRastState);
+		
+		// Rasterizer State
+		rasterizerStateDesc.mCullMode = CULL_MODE_BACK;
+		addRasterizerState(pRenderer, &rasterizerStateDesc, &pSecondRastState);
 
 		// Depth State
 		DepthStateDesc depthStateDesc = {};
@@ -254,7 +260,7 @@ public:
 		removeRootSignature(pRenderer, pRootSignature);
 
 		removeDepthState(pDepthState);
-		removeRasterizerState(pRastState);
+		removeRasterizerState(pSecondRastState);
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
@@ -318,6 +324,9 @@ public:
 		pipelineSettings.pVertexLayout = &vertexLayout;
 		pipelineSettings.pRasterizerState = pRastState;
 		addPipeline(pRenderer, &desc, &pQuadPipeline);
+
+		pipelineSettings.pRasterizerState = pSecondRastState;
+		addPipeline(pRenderer, &desc, &pSecondQuadPipeline);
 
 		return true;
 	}
@@ -394,6 +403,18 @@ public:
 			cmdSetScissor(cmd, 0, 0, pRenderTarget->mDesc.mWidth, pRenderTarget->mDesc.mHeight);
 
 			cmdBindPipeline(cmd, pQuadPipeline);
+			{
+				DescriptorData params[2] = {};
+				params[0].pName = "Texture";
+				params[0].ppTextures = &pQuadTexture;
+				params[1].pName = "UniformData";
+				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
+				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 2, params);
+				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
+				cmdDraw(cmd, 6, 0);
+			}
+
+			cmdBindPipeline(cmd, pSecondQuadPipeline);
 			{
 				DescriptorData params[2] = {};
 				params[0].pName = "Texture";
