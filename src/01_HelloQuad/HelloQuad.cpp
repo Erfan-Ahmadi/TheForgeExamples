@@ -217,9 +217,9 @@ public:
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &bToggleMicroProfiler));
 
 		// Camera
-		CameraMotionParameters cmp{ 160.0f, 600.0f, 200.0f };
-		vec3                   camPos{ 48.0f, 48.0f, 20.0f };
-		vec3                   lookAt{ 0 };
+		CameraMotionParameters cmp{ 40.0f, 30.0f, 200.0f };
+		vec3                   camPos{ 0.0f, 0.0f, -1.0f };
+		vec3                   lookAt{ 0.0f, 0.0f, 0.0f };
 
 		pCameraController = createFpsCameraController(camPos, lookAt);
 
@@ -345,8 +345,8 @@ public:
 		const float horizontal_fov = PI / 2.0f;
 		mat4        projMat = mat4::perspective(horizontal_fov, aspectInverse, 0.1f, 1000.0f);
 
-		ubo.view = mat4::identity();
-		ubo.proj = mat4::identity();
+		ubo.view = viewMat;
+		ubo.proj = projMat;
 		
 		viewMat.setTranslation(vec3(0));
 	}
