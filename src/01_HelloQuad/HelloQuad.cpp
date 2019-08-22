@@ -38,6 +38,14 @@ ICameraController* pCameraController = NULL;
 
 GuiComponent* pGui = NULL;
 
+Buffer* pUniformBuffers[gImageCount] = { NULL };
+
+struct UniformBuffer
+{
+	mat4 view;
+	mat4 proj;
+} ubo;
+
 const char* pTexturesFileNames[] = { "Skybox_front5" };
 
 const char* pszBases[FSR_Count] = {
@@ -150,6 +158,20 @@ public:
 		quadVBufferDesc.ppBuffer = &pQuadVertexBuffer;
 		addResource(&quadVBufferDesc);
 
+		// Uniform Buffer
+		BufferLoadDesc quadUniformBufferDesc = {};
+		quadUniformBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		quadUniformBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		quadUniformBufferDesc.mDesc.mSize = sizeof(UniformBuffer);
+		quadUniformBufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+		quadUniformBufferDesc.pData = NULL;
+
+		for (uint32_t i = 0; i < gImageCount; ++i)
+		{
+			quadUniformBufferDesc.ppBuffer = &pUniformBuffers[i];
+			addResource(&quadUniformBufferDesc);
+		}
+
 		// Resource Binding
 		Shader* shaders = { pQuadShader };
 		const char* pStaticSamplers[] = { "uSampler0" };
@@ -216,6 +238,11 @@ public:
 		destroyCameraController(pCameraController);
 
 		gAppUI.Exit();
+				
+		for (uint32_t i = 0; i < gImageCount; ++i)
+		{
+			removeResource(pUniformBuffers[i]);
+		}
 
 		removeResource(pQuadVertexBuffer);
 		removeResource(pQuadTexture);
@@ -310,6 +337,18 @@ public:
 	void Update(float deltaTime)
 	{
 		pCameraController->update(deltaTime);
+		
+		// update camera with time
+		mat4 viewMat = pCameraController->getViewMatrix();
+
+		const float aspectInverse = (float)mSettings.mHeight / (float)mSettings.mWidth;
+		const float horizontal_fov = PI / 2.0f;
+		mat4        projMat = mat4::perspective(horizontal_fov, aspectInverse, 0.1f, 1000.0f);
+
+		ubo.view = mat4::identity();
+		ubo.proj = mat4::identity();
+		
+		viewMat.setTranslation(vec3(0));
 	}
 
 	void Draw()
@@ -324,7 +363,12 @@ public:
 		getFenceStatus(pRenderer, pRenderCompleteFence, &fenceStatus);
 		if (fenceStatus == FENCE_STATUS_INCOMPLETE)
 			waitForFences(pRenderer, 1, &pRenderCompleteFence);
+		
+		// Update uniform buffers
+		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &ubo};
+		updateResource(&viewProjCbv);
 
+		// Load Actions
 		LoadActionsDesc loadActions = {};
 		loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
 		loadActions.mClearColorValues[0].r = 0.0f;
@@ -351,10 +395,12 @@ public:
 
 			cmdBindPipeline(cmd, pQuadPipeline);
 			{
-				DescriptorData params[1] = {};
+				DescriptorData params[2] = {};
 				params[0].pName = "Texture";
 				params[0].ppTextures = &pQuadTexture;
-				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 1, params);
+				params[1].pName = "UniformData";
+				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
+				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 2, params);
 				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
 				cmdDraw(cmd, 6, 0);
 			}
@@ -403,6 +449,22 @@ public:
 	}
 
 	const char* GetName() { return "01_HelloQuad"; }
+		
+	void RecenterCameraView(float maxDistance, vec3 lookAt = vec3(0))
+	{
+		vec3 p = pCameraController->getViewPosition();
+		vec3 d = p - lookAt;
+
+		float lenSqr = lengthSqr(d);
+		if (lenSqr > (maxDistance * maxDistance))
+		{
+			d *= (maxDistance / sqrtf(lenSqr));
+		}
+
+		p = d + lookAt;
+		pCameraController->moveTo(p);
+		pCameraController->lookAt(lookAt);
+	}
 
 	static bool cameraInputEvent(const ButtonData* data)
 	{

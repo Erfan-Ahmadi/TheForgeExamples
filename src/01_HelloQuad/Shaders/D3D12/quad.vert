@@ -1,3 +1,9 @@
+cbuffer UniformData : register(b0)
+{
+	float4x4 view;
+	float4x4 proj;
+};
+
 struct VSInput
 {
     float4 Position : POSITION;
@@ -13,7 +19,7 @@ struct VSOutput {
 VSOutput main(VSInput input)
 {
 	VSOutput result;
-	result.Position = input.Position;
+	result.Position = mul(proj, mul(view, input.Position));
 	result.TexCoord = input.TexCoord;
 	return result;
 }
