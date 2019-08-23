@@ -52,7 +52,7 @@ const char* pTexturesFileNames[] = { "Skybox_front5" };
 
 const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_BinShaders
-	"../../../../src/01_HelloQuad/",												// FSR_SrcShaders
+	"../../../../src/02_Instancing/",												// FSR_SrcShaders
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Textures
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Meshes
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
@@ -469,7 +469,7 @@ public:
 		return pDepthBuffer != NULL;
 	}
 
-	const char* GetName() { return "01_HelloQuad"; }
+	const char* GetName() { return "02_Instancing"; }
 		
 	void RecenterCameraView(float maxDistance, vec3 lookAt = vec3(0))
 	{
