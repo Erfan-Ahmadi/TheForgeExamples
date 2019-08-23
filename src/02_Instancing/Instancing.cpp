@@ -1,5 +1,9 @@
 #include "../common.h"
 
+constexpr size_t gInstanceCount = 40;
+constexpr size_t gUniformDataSize = (2 + gInstanceCount) * sizeof(mat4);
+
+
 const uint32_t	gImageCount = 3;
 bool			bToggleMicroProfiler = false;
 bool			bPrevToggleMicroProfiler = false;
@@ -46,7 +50,8 @@ struct UniformBuffer
 {
 	mat4 view;
 	mat4 proj;
-} ubo;
+	mat4 pToWorld[gInstanceCount];
+} uniformData;
 
 const char* pTexturesFileNames[] = { "Skybox_front5" };
 
@@ -64,10 +69,10 @@ const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
 
-class HelloQuad : public IApp
+class Instancing : public IApp
 {
 public:
-	HelloQuad()
+	Instancing()
 	{
 	}
 
@@ -164,7 +169,7 @@ public:
 		BufferLoadDesc quadUniformBufferDesc = {};
 		quadUniformBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		quadUniformBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-		quadUniformBufferDesc.mDesc.mSize = sizeof(UniformBuffer);
+		quadUniformBufferDesc.mDesc.mSize = gUniformDataSize;
 		quadUniformBufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
 		quadUniformBufferDesc.pData = NULL;
 
@@ -193,7 +198,7 @@ public:
 		RasterizerStateDesc rasterizerStateDesc = {};
 		rasterizerStateDesc.mCullMode = CULL_MODE_FRONT;
 		addRasterizerState(pRenderer, &rasterizerStateDesc, &pRastState);
-		
+
 		// Rasterizer State
 		rasterizerStateDesc.mCullMode = CULL_MODE_BACK;
 		addRasterizerState(pRenderer, &rasterizerStateDesc, &pSecondRastState);
@@ -244,7 +249,7 @@ public:
 		destroyCameraController(pCameraController);
 
 		gAppUI.Exit();
-				
+
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
 			removeResource(pUniformBuffers[i]);
@@ -345,8 +350,11 @@ public:
 
 	void Update(float deltaTime)
 	{
+		static float currentTime;
+		currentTime += deltaTime;
+
 		pCameraController->update(deltaTime);
-		
+
 		// update camera with time
 		mat4 viewMat = pCameraController->getViewMatrix();
 
@@ -354,9 +362,22 @@ public:
 		const float horizontal_fov = PI / 2.0f;
 		mat4        projMat = mat4::perspective(horizontal_fov, aspectInverse, 0.1f, 1000.0f);
 
-		ubo.view = viewMat;
-		ubo.proj = projMat;
-		
+		uniformData.view = viewMat;
+		uniformData.proj = projMat;
+
+		// Update Instance Data
+		for (unsigned int i = 0; i < gInstanceCount; ++i)
+		{
+			mat4 world = mat4::translation(
+				Vector3(
+					cos((2.0f * PI / (float)gInstanceCount * i)),
+					sin((2.0f * PI / (float)gInstanceCount * i)),
+					0.0f));
+
+			world *= mat4::rotationZ(currentTime * PI / 2.0f + i);
+			uniformData.pToWorld[i] = world;
+		}
+
 		viewMat.setTranslation(vec3(0));
 	}
 
@@ -372,9 +393,9 @@ public:
 		getFenceStatus(pRenderer, pRenderCompleteFence, &fenceStatus);
 		if (fenceStatus == FENCE_STATUS_INCOMPLETE)
 			waitForFences(pRenderer, 1, &pRenderCompleteFence);
-		
+
 		// Update uniform buffers
-		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &ubo};
+		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &uniformData, 0, 0, gUniformDataSize};
 		updateResource(&viewProjCbv);
 
 		// Load Actions
@@ -411,7 +432,7 @@ public:
 				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
 				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 2, params);
 				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
-				cmdDraw(cmd, 6, 0);
+				cmdDrawInstanced(cmd, 6, 0, gInstanceCount, 0);
 			}
 
 			cmdBindPipeline(cmd, pSecondQuadPipeline);
@@ -423,7 +444,7 @@ public:
 				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
 				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 2, params);
 				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
-				cmdDraw(cmd, 6, 0);
+				cmdDrawInstanced(cmd, 6, 0, gInstanceCount, 0);
 			}
 
 			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
@@ -470,7 +491,7 @@ public:
 	}
 
 	const char* GetName() { return "02_Instancing"; }
-		
+
 	void RecenterCameraView(float maxDistance, vec3 lookAt = vec3(0))
 	{
 		vec3 p = pCameraController->getViewPosition();
@@ -494,4 +515,4 @@ public:
 	}
 };
 
-DEFINE_APPLICATION_MAIN(HelloQuad)
+DEFINE_APPLICATION_MAIN(Instancing)
