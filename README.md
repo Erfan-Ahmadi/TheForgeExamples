@@ -2,9 +2,12 @@
 
 - Implemntations :
   - [x] Draw Textured Quad
-  - [ ] Instancing
+  - [x] Instancing
   - [ ] Load Model
   - [ ] Calculate Normals
+  - [ ] Gooch Shading
+  - [ ] Phong Shading
+  - [ ] Light Maps
   - [ ] Lighting (Blinn-Phong)
     - [ ] Directional Light
     - [ ] Point Light
