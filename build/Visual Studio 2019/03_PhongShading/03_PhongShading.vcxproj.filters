@@ -15,17 +15,17 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\src\03_PhongShading\Shaders\Vulkan\quad.vert">
-      <Filter>Shaders\Vulkan</Filter>
-    </None>
-    <None Include="..\..\..\src\03_PhongShading\Shaders\Vulkan\quad.frag">
-      <Filter>Shaders\Vulkan</Filter>
-    </None>
-    <None Include="..\..\..\src\03_PhongShading\Shaders\D3D12\quad.vert">
+    <None Include="..\..\..\src\03_PhongShading\Shaders\D3D12\cube.frag">
       <Filter>Shaders\D3D12</Filter>
     </None>
-    <None Include="..\..\..\src\03_PhongShading\Shaders\D3D12\quad.frag">
+    <None Include="..\..\..\src\03_PhongShading\Shaders\D3D12\cube.vert">
       <Filter>Shaders\D3D12</Filter>
+    </None>
+    <None Include="..\..\..\src\03_PhongShading\Shaders\Vulkan\cube.frag">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\03_PhongShading\Shaders\Vulkan\cube.vert">
+      <Filter>Shaders\Vulkan</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

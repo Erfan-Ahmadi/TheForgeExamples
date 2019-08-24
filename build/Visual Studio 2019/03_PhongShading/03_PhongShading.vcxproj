@@ -27,10 +27,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\src\03_PhongShading\Shaders\D3D12\quad.frag" />
-    <None Include="..\..\..\src\03_PhongShading\Shaders\D3D12\quad.vert" />
-    <None Include="..\..\..\src\03_PhongShading\Shaders\Vulkan\quad.frag" />
-    <None Include="..\..\..\src\03_PhongShading\Shaders\Vulkan\quad.vert" />
+    <None Include="..\..\..\src\03_PhongShading\Shaders\D3D12\cube.frag" />
+    <None Include="..\..\..\src\03_PhongShading\Shaders\D3D12\cube.vert" />
+    <None Include="..\..\..\src\03_PhongShading\Shaders\Vulkan\cube.frag" />
+    <None Include="..\..\..\src\03_PhongShading\Shaders\Vulkan\cube.vert" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\03_PhongShading\PhongShading.cpp" />

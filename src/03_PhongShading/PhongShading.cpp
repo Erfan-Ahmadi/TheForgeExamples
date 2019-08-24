@@ -43,6 +43,7 @@ ICameraController* pCameraController = NULL;
 
 GuiComponent* pGui = NULL;
 
+Buffer* pLightBuffer = NULL;
 Buffer* pUniformBuffers[gImageCount] = { NULL };
 
 struct UniformBuffer
@@ -51,6 +52,13 @@ struct UniformBuffer
 	mat4 proj;
 	mat4 pToWorld[gInstanceCount];
 } uniformData;
+
+struct LightBuffer
+{
+	float4 lightPos;
+	float4 lightColor;
+} lightData;
+
 
 struct Vertex
 {
@@ -112,8 +120,8 @@ public:
 
 		// Shader
 		ShaderLoadDesc quadShaderDesc = {};
-		quadShaderDesc.mStages[0] = { "quad.vert", NULL, 0, FSR_SrcShaders };
-		quadShaderDesc.mStages[1] = { "quad.frag", NULL, 0, FSR_SrcShaders };
+		quadShaderDesc.mStages[0] = { "cube.vert", NULL, 0, FSR_SrcShaders };
+		quadShaderDesc.mStages[1] = { "cube.frag", NULL, 0, FSR_SrcShaders };
 		addShader(pRenderer, &quadShaderDesc, &pQuadShader);
 
 		// Texture
@@ -149,7 +157,7 @@ public:
 		BufferLoadDesc quadUniformBufferDesc = {};
 		quadUniformBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		quadUniformBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-		quadUniformBufferDesc.mDesc.mSize = cubeDataSize;
+		quadUniformBufferDesc.mDesc.mSize = sizeof(UniformBuffer);
 		quadUniformBufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
 		quadUniformBufferDesc.pData = NULL;
 
@@ -159,19 +167,32 @@ public:
 			addResource(&quadUniformBufferDesc);
 		}
 
+		// Light Uniform Buffer
+		BufferLoadDesc lightUniformBufferDesc = {};
+		lightUniformBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		lightUniformBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		lightUniformBufferDesc.mDesc.mSize = sizeof(LightBuffer);
+		lightUniformBufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+		lightUniformBufferDesc.pData = NULL;
+		lightUniformBufferDesc.ppBuffer = &pLightBuffer;
+		addResource(&lightUniformBufferDesc);
+		
+		lightData.lightPos = float4{ 1.0f, 1.0f, 1.0f, 1.0f };
+		lightData.lightColor = float4{ 1.0f, 1.0f, 1.0f, 1.0f };
+		
+
 		// Resource Binding
-		Shader* shaders = { pQuadShader };
 		const char* pStaticSamplers[] = { "uSampler0" };
 
 		RootSignatureDesc rootDesc = {};
 		rootDesc.mShaderCount = 1;
-		rootDesc.ppShaders = &shaders;
+		rootDesc.ppShaders = &pQuadShader;
 		rootDesc.mStaticSamplerCount = 1;
 		rootDesc.ppStaticSamplers = &pSampler;
 		rootDesc.ppStaticSamplerNames = pStaticSamplers;
 		addRootSignature(pRenderer, &rootDesc, &pRootSignature);
 
-		DescriptorBinderDesc descriptorBinderDescs[1] = { {pRootSignature} };
+		DescriptorBinderDesc descriptorBinderDescs[1] = { { pRootSignature } };
 		addDescriptorBinder(pRenderer, 0, 1, descriptorBinderDescs, &pDescriptorBinder);
 
 		// Rasterizer State
@@ -234,6 +255,8 @@ public:
 		{
 			removeResource(pUniformBuffers[i]);
 		}
+		
+		removeResource(pLightBuffer);
 
 		removeResource(pQuadVertexBuffer);
 		removeResource(pQuadTexture);
@@ -352,7 +375,7 @@ public:
 				Vector3(
 					i / 10.0f * cos((2.0f * PI / (float)gInstanceCount * i)),
 					i / 10.0f * sin((2.0f * PI / (float)gInstanceCount * i)),
-					i / 5.0f));
+					5 + i / 5.0f));
 
 			world *= mat4::rotationY(currentTime * PI / 2.0f + i);
 			uniformData.pToWorld[i] = world;
@@ -377,6 +400,10 @@ public:
 		// Update uniform buffers
 		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &uniformData, 0, 0, cubeDataSize };
 		updateResource(&viewProjCbv);
+
+		// Update light uniform buffers
+		BufferUpdateDesc lightCbv = { pLightBuffer, &lightData };
+		updateResource(&lightCbv);
 
 		// Load Actions
 		LoadActionsDesc loadActions = {};
@@ -405,27 +432,31 @@ public:
 
 			cmdBindPipeline(cmd, pQuadPipeline);
 			{
-				DescriptorData params[2] = {};
+				DescriptorData params[3] = {};
 				params[0].pName = "Texture";
 				params[0].ppTextures = &pQuadTexture;
 				params[1].pName = "UniformData";
 				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
-				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 2, params);
+				params[2].pName = "LightData";
+				params[2].ppBuffers = &pLightBuffer;
+				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 3, params);
 				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
 				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
 			}
 
-			cmdBindPipeline(cmd, pSecondQuadPipeline);
-			{
-				DescriptorData params[2] = {};
-				params[0].pName = "Texture";
-				params[0].ppTextures = &pQuadTexture;
-				params[1].pName = "UniformData";
-				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
-				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 2, params);
-				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
-				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
-			}
+			//cmdBindPipeline(cmd, pSecondQuadPipeline);
+			//{
+			//	DescriptorData params[3] = {};
+			//	params[0].pName = "Texture";
+			//	params[0].ppTextures = &pQuadTexture;
+			//	params[1].pName = "UniformData";
+			//	params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
+			//	params[2].pName = "LightData";
+			//	params[2].ppBuffers = &pLightBuffer;
+			//	cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 3, params);
+			//	cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
+			//	cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
+			//}
 
 			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
 			cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
@@ -497,15 +528,15 @@ public:
 	static void getCubeVertexData(Vertex** vertexData)
 	{
 		Vertex* pVertices = (Vertex*)conf_malloc(sizeof(Vertex) * 6 * 6);
-				
-//		   .4------5     4------5     4------5     4------5     4------5.
-//		 .' |    .'|    /|     /|     |      |     |\     |\    |`.    | `.
-//		0---+--1'  |   0-+----1 |     0------1     | 0----+-1   |  `0--+---1
-//		|   |  |   |   | |    | |     |      |     | |    | |   |   |  |   |
-//		|  ,6--+---7   | 6----+-7     6------7     6-+----7 |   6---+--7   |
-//		|.'    | .'    |/     |/      |      |      \|     \|    `. |   `. |
-//		2------3'      2------3       2------3       2------3      `2------3
-		
+
+		//		   .4------5     4------5     4------5     4------5     4------5.
+		//		 .' |    .'|    /|     /|     |      |     |\     |\    |`.    | `.
+		//		0---+--1'  |   0-+----1 |     0------1     | 0----+-1   |  `0--+---1
+		//		|   |  |   |   | |    | |     |      |     | |    | |   |   |  |   |
+		//		|  ,6--+---7   | 6----+-7     6------7     6-+----7 |   6---+--7   |
+		//		|.'    | .'    |/     |/      |      |      \|     \|    `. |   `. |
+		//		2------3'      2------3       2------3       2------3      `2------3
+
 		float3 point0 = float3{ -0.5f, +0.5f, -0.5f };
 		float3 point1 = float3{ +0.5f, +0.5f, -0.5f };
 		float3 point2 = float3{ -0.5f, -0.5f, -0.5f };
@@ -536,10 +567,10 @@ public:
 		pVertices[5] = Vertex{ point3, backward, bottom_right };
 
 		// Back Face -> 5 4 7, 7 4 6
-		pVertices[6]  = Vertex{ point5, forward, top_left };
-		pVertices[7]  = Vertex{ point4, forward, top_right };
-		pVertices[8]  = Vertex{ point7, forward, bottom_left };
-		pVertices[9]  = Vertex{ point7, forward, bottom_left };
+		pVertices[6] = Vertex{ point5, forward, top_left };
+		pVertices[7] = Vertex{ point4, forward, top_right };
+		pVertices[8] = Vertex{ point7, forward, bottom_left };
+		pVertices[9] = Vertex{ point7, forward, bottom_left };
 		pVertices[10] = Vertex{ point4, forward, top_right };
 		pVertices[11] = Vertex{ point6, forward, bottom_right };
 
@@ -558,7 +589,7 @@ public:
 		pVertices[21] = Vertex{ point6, left, bottom_left };
 		pVertices[22] = Vertex{ point0, left, top_right };
 		pVertices[23] = Vertex{ point2, left, bottom_right };
-		
+
 		// Top Face -> 4 5 0, 0 5 1
 		pVertices[24] = Vertex{ point4, up, top_left };
 		pVertices[25] = Vertex{ point5, up, top_right };
@@ -566,7 +597,7 @@ public:
 		pVertices[27] = Vertex{ point0, up, bottom_left };
 		pVertices[28] = Vertex{ point5, up, top_right };
 		pVertices[29] = Vertex{ point1, up, bottom_right };
-		
+
 		// Bottom Face -> 7 6 3, 3 6 2
 		pVertices[30] = Vertex{ point7, down, top_left };
 		pVertices[31] = Vertex{ point6, down, top_right };
@@ -576,6 +607,6 @@ public:
 		pVertices[35] = Vertex{ point2, down, bottom_right };
 		*vertexData = pVertices;
 	}
-};
+	};
 
 DEFINE_APPLICATION_MAIN(PhongShading)
