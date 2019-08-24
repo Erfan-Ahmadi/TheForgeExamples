@@ -3,9 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.29209.62
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "01_HelloQuad", "HelloQuad\HelloQuad.vcxproj", "{8C55733B-7D95-465F-8526-38BBB8E7D24B}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "01_HelloQuad", "01_HelloQuad\HelloQuad.vcxproj", "{8C55733B-7D95-465F-8526-38BBB8E7D24B}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "02_Instancing", "02_Instancing\02_Instancing.vcxproj", "{4D05C16A-EE04-4C47-8561-C4110FCB1ECD}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "03_PhongShading", "03_PhongShading\03_PhongShading.vcxproj", "{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -41,6 +43,18 @@ Global
 		{4D05C16A-EE04-4C47-8561-C4110FCB1ECD}.ReleaseDx11|x64.Build.0 = ReleaseDx11|x64
 		{4D05C16A-EE04-4C47-8561-C4110FCB1ECD}.ReleaseVk|x64.ActiveCfg = ReleaseVk|x64
 		{4D05C16A-EE04-4C47-8561-C4110FCB1ECD}.ReleaseVk|x64.Build.0 = ReleaseVk|x64
+		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.DebugDx|x64.ActiveCfg = DebugDx|x64
+		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.DebugDx|x64.Build.0 = DebugDx|x64
+		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.DebugDx11|x64.ActiveCfg = DebugDx11|x64
+		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.DebugDx11|x64.Build.0 = DebugDx11|x64
+		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.DebugVk|x64.ActiveCfg = DebugVk|x64
+		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.DebugVk|x64.Build.0 = DebugVk|x64
+		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.ReleaseDx|x64.ActiveCfg = ReleaseDx|x64
+		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.ReleaseDx|x64.Build.0 = ReleaseDx|x64
+		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.ReleaseDx11|x64.ActiveCfg = ReleaseDx11|x64
+		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.ReleaseDx11|x64.Build.0 = ReleaseDx11|x64
+		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.ReleaseVk|x64.ActiveCfg = ReleaseVk|x64
+		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.ReleaseVk|x64.Build.0 = ReleaseVk|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

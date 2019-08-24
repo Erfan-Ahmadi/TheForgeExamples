@@ -1,6 +1,6 @@
 #include "../common.h"
 
-constexpr size_t gInstanceCount = 40;
+constexpr size_t gInstanceCount = 128;
 constexpr size_t gUniformDataSize = (2 + gInstanceCount) * sizeof(mat4);
 
 
@@ -370,9 +370,9 @@ public:
 		{
 			mat4 world = mat4::translation(
 				Vector3(
-					cos((2.0f * PI / (float)gInstanceCount * i)),
-					sin((2.0f * PI / (float)gInstanceCount * i)),
-					0.0f));
+					i/10.0f * cos((2.0f * PI / (float)gInstanceCount * i)),
+					i/10.0f * sin((2.0f * PI / (float)gInstanceCount * i)),
+					i/5.0f));
 
 			world *= mat4::rotationZ(currentTime * PI / 2.0f + i);
 			uniformData.pToWorld[i] = world;

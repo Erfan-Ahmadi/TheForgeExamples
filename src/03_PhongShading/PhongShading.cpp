@@ -1,5 +1,8 @@
 #include "../common.h"
 
+constexpr size_t gInstanceCount = 1;
+
+
 const uint32_t	gImageCount = 3;
 bool			bToggleMicroProfiler = false;
 bool			bPrevToggleMicroProfiler = false;
@@ -46,13 +49,23 @@ struct UniformBuffer
 {
 	mat4 view;
 	mat4 proj;
-} ubo;
+	mat4 pToWorld[gInstanceCount];
+} uniformData;
+
+struct Vertex
+{
+	float3 position;
+	float3 normal;
+	float2 textCoord;
+};
+
+constexpr uint64_t cubeDataSize = 6 * 6 * sizeof(Vertex);
 
 const char* pTexturesFileNames[] = { "Skybox_front5" };
 
 const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_BinShaders
-	"../../../../src/02_Instancing/",												// FSR_SrcShaders
+	"../../../../src/03_PhongShading/",												// FSR_SrcShaders
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Textures
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Meshes
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
@@ -64,10 +77,10 @@ const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
 
-class HelloQuad : public IApp
+class PhongShading : public IApp
 {
 public:
-	HelloQuad()
+	PhongShading()
 	{
 	}
 
@@ -119,44 +132,16 @@ public:
 									ADDRESS_MODE_CLAMP_TO_EDGE };
 		addSampler(pRenderer, &samplerDesc, &pSampler);
 
-
-		float pPoints[]
-		{
-			+0.5f, +0.5f, +1.0f,	// Vertex Top Right
-			0.0f, 0.0f, -1.0f  ,	// Normal 
-			1.0f, 0.0f,				// TextureCoord	
-
-			+0.5f, -0.5f, +1.0f,	// Vertex Bottom Right
-			0.0f, 0.0f, -1.0f  ,	// Normal
-			1.0f, 1.0f,				// TextureCoord
-
-			-0.5f, +0.5f, +1.0f,	// Vertex Top Left
-			0.0f, 0.0f, -1.0f  ,	// Normal
-			0.0f, 0.0f,				// TextureCoord
-
-			-0.5f, +0.5f, +1.0f,	// Vertex Top Left
-			0.0f, 0.0f, -1.0f  ,	// Normal
-			0.0f, 0.0f,				// TextureCoord
-
-			+0.5f, -0.5f, +1.0f,	// Vertex Bottom Right
-			0.0f, 0.0f, -1.0f  ,	// Normal
-			1.0f, 1.0f,				// TextureCoord
-
-			-0.5f, -0.5f, +1.0f,	// Vertex Bottom Left
-			0.0f, 0.0f, -1.0f,		// Normal
-			0.0f, 1.0f,				// TextureCoord
-		};
-
-
-		uint64_t quadDataSize = 6 * 8 * sizeof(float);
+		Vertex* pVertices;
+		getCubeVertexData(&pVertices);
 
 		// Vertex Buffer
 		BufferLoadDesc quadVBufferDesc = {};
 		quadVBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
 		quadVBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
-		quadVBufferDesc.mDesc.mSize = quadDataSize;
-		quadVBufferDesc.mDesc.mVertexStride = sizeof(float) * 8;
-		quadVBufferDesc.pData = pPoints;
+		quadVBufferDesc.mDesc.mSize = cubeDataSize;
+		quadVBufferDesc.mDesc.mVertexStride = sizeof(Vertex);
+		quadVBufferDesc.pData = pVertices;
 		quadVBufferDesc.ppBuffer = &pQuadVertexBuffer;
 		addResource(&quadVBufferDesc);
 
@@ -164,7 +149,7 @@ public:
 		BufferLoadDesc quadUniformBufferDesc = {};
 		quadUniformBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		quadUniformBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-		quadUniformBufferDesc.mDesc.mSize = sizeof(UniformBuffer);
+		quadUniformBufferDesc.mDesc.mSize = cubeDataSize;
 		quadUniformBufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
 		quadUniformBufferDesc.pData = NULL;
 
@@ -193,7 +178,7 @@ public:
 		RasterizerStateDesc rasterizerStateDesc = {};
 		rasterizerStateDesc.mCullMode = CULL_MODE_FRONT;
 		addRasterizerState(pRenderer, &rasterizerStateDesc, &pRastState);
-		
+
 		// Rasterizer State
 		rasterizerStateDesc.mCullMode = CULL_MODE_BACK;
 		addRasterizerState(pRenderer, &rasterizerStateDesc, &pSecondRastState);
@@ -244,7 +229,7 @@ public:
 		destroyCameraController(pCameraController);
 
 		gAppUI.Exit();
-				
+
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
 			removeResource(pUniformBuffers[i]);
@@ -345,8 +330,11 @@ public:
 
 	void Update(float deltaTime)
 	{
+		static float currentTime;
+		currentTime += deltaTime;
+
 		pCameraController->update(deltaTime);
-		
+
 		// update camera with time
 		mat4 viewMat = pCameraController->getViewMatrix();
 
@@ -354,9 +342,22 @@ public:
 		const float horizontal_fov = PI / 2.0f;
 		mat4        projMat = mat4::perspective(horizontal_fov, aspectInverse, 0.1f, 1000.0f);
 
-		ubo.view = viewMat;
-		ubo.proj = projMat;
-		
+		uniformData.view = viewMat;
+		uniformData.proj = projMat;
+
+		// Update Instance Data
+		for (unsigned int i = 0; i < gInstanceCount; ++i)
+		{
+			mat4 world = mat4::translation(
+				Vector3(
+					i / 10.0f * cos((2.0f * PI / (float)gInstanceCount * i)),
+					i / 10.0f * sin((2.0f * PI / (float)gInstanceCount * i)),
+					i / 5.0f));
+
+			world *= mat4::rotationY(currentTime * PI / 2.0f + i);
+			uniformData.pToWorld[i] = world;
+		}
+
 		viewMat.setTranslation(vec3(0));
 	}
 
@@ -372,9 +373,9 @@ public:
 		getFenceStatus(pRenderer, pRenderCompleteFence, &fenceStatus);
 		if (fenceStatus == FENCE_STATUS_INCOMPLETE)
 			waitForFences(pRenderer, 1, &pRenderCompleteFence);
-		
+
 		// Update uniform buffers
-		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &ubo};
+		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &uniformData, 0, 0, cubeDataSize };
 		updateResource(&viewProjCbv);
 
 		// Load Actions
@@ -411,7 +412,7 @@ public:
 				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
 				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 2, params);
 				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
-				cmdDraw(cmd, 6, 0);
+				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
 			}
 
 			cmdBindPipeline(cmd, pSecondQuadPipeline);
@@ -423,7 +424,7 @@ public:
 				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
 				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 2, params);
 				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
-				cmdDraw(cmd, 6, 0);
+				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
 			}
 
 			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
@@ -469,8 +470,8 @@ public:
 		return pDepthBuffer != NULL;
 	}
 
-	const char* GetName() { return "02_Instancing"; }
-		
+	const char* GetName() { return "03_PhongShading"; }
+
 	void RecenterCameraView(float maxDistance, vec3 lookAt = vec3(0))
 	{
 		vec3 p = pCameraController->getViewPosition();
@@ -492,6 +493,89 @@ public:
 		pCameraController->onInputEvent(data);
 		return true;
 	}
+
+	static void getCubeVertexData(Vertex** vertexData)
+	{
+		Vertex* pVertices = (Vertex*)conf_malloc(sizeof(Vertex) * 6 * 6);
+				
+//		   .4------5     4------5     4------5     4------5     4------5.
+//		 .' |    .'|    /|     /|     |      |     |\     |\    |`.    | `.
+//		0---+--1'  |   0-+----1 |     0------1     | 0----+-1   |  `0--+---1
+//		|   |  |   |   | |    | |     |      |     | |    | |   |   |  |   |
+//		|  ,6--+---7   | 6----+-7     6------7     6-+----7 |   6---+--7   |
+//		|.'    | .'    |/     |/      |      |      \|     \|    `. |   `. |
+//		2------3'      2------3       2------3       2------3      `2------3
+		
+		float3 point0 = float3{ -0.5f, +0.5f, -0.5f };
+		float3 point1 = float3{ +0.5f, +0.5f, -0.5f };
+		float3 point2 = float3{ -0.5f, -0.5f, -0.5f };
+		float3 point3 = float3{ +0.5f, -0.5f, -0.5f };
+		float3 point4 = float3{ -0.5f, +0.5f, +0.5f };
+		float3 point5 = float3{ +0.5f, +0.5f, +0.5f };
+		float3 point6 = float3{ -0.5f, -0.5f, +0.5f };
+		float3 point7 = float3{ +0.5f, -0.5f, +0.5f };
+
+		float3 right = float3{ +1.0f, 0.0f, 0.0f };
+		float3 left = float3{ -1.0f, 0.0f, 0.0f };
+		float3 forward = float3{ 0.0f, 0.0f, +1.0f };
+		float3 backward = float3{ 0.0f, 0.0f, -1.0f };
+		float3 up = float3{ 0.0f, +1.0f, 0.0f };
+		float3 down = float3{ 0.0f, -1.0f, 0.0f };
+
+		float2 top_left = float2{ 0.0f, 0.0f };
+		float2 top_right = float2{ 1.0f, 0.0f };
+		float2 bottom_left = float2{ 0.0f, 1.0f };
+		float2 bottom_right = float2{ 1.0f, 1.0f };
+
+		// Front Face -> 0 1 3, 2 0 3
+		pVertices[0] = Vertex{ point0, backward, top_left };
+		pVertices[1] = Vertex{ point1, backward, top_right };
+		pVertices[2] = Vertex{ point3, backward, bottom_right };
+		pVertices[3] = Vertex{ point2, backward, bottom_left };
+		pVertices[4] = Vertex{ point0, backward, top_left };
+		pVertices[5] = Vertex{ point3, backward, bottom_right };
+
+		// Back Face -> 5 4 7, 7 4 6
+		pVertices[6]  = Vertex{ point5, forward, top_left };
+		pVertices[7]  = Vertex{ point4, forward, top_right };
+		pVertices[8]  = Vertex{ point7, forward, bottom_left };
+		pVertices[9]  = Vertex{ point7, forward, bottom_left };
+		pVertices[10] = Vertex{ point4, forward, top_right };
+		pVertices[11] = Vertex{ point6, forward, bottom_right };
+
+		// Right Face -> 1 5 3, 3 5 7
+		pVertices[12] = Vertex{ point1, right, top_left };
+		pVertices[13] = Vertex{ point5, right, top_right };
+		pVertices[14] = Vertex{ point3, right, bottom_left };
+		pVertices[15] = Vertex{ point3, right, bottom_left };
+		pVertices[16] = Vertex{ point5, right, top_right };
+		pVertices[17] = Vertex{ point7, right, bottom_right };
+
+		// Left Face -> 4 0 6, 6 0 2
+		pVertices[18] = Vertex{ point4, left, top_left };
+		pVertices[19] = Vertex{ point0, left, top_right };
+		pVertices[20] = Vertex{ point6, left, bottom_left };
+		pVertices[21] = Vertex{ point6, left, bottom_left };
+		pVertices[22] = Vertex{ point0, left, top_right };
+		pVertices[23] = Vertex{ point2, left, bottom_right };
+		
+		// Top Face -> 4 5 0, 0 5 1
+		pVertices[24] = Vertex{ point4, up, top_left };
+		pVertices[25] = Vertex{ point5, up, top_right };
+		pVertices[26] = Vertex{ point0, up, bottom_left };
+		pVertices[27] = Vertex{ point0, up, bottom_left };
+		pVertices[28] = Vertex{ point5, up, top_right };
+		pVertices[29] = Vertex{ point1, up, bottom_right };
+		
+		// Bottom Face -> 7 6 3, 3 6 2
+		pVertices[30] = Vertex{ point7, down, top_left };
+		pVertices[31] = Vertex{ point6, down, top_right };
+		pVertices[32] = Vertex{ point3, down, bottom_left };
+		pVertices[33] = Vertex{ point3, down, bottom_left };
+		pVertices[34] = Vertex{ point6, down, top_right };
+		pVertices[35] = Vertex{ point2, down, bottom_right };
+		*vertexData = pVertices;
+	}
 };
 
-DEFINE_APPLICATION_MAIN(HelloQuad)
+DEFINE_APPLICATION_MAIN(PhongShading)
