@@ -1,12 +1,12 @@
 # Learning [The Forge Rendering API](https://github.com/ConfettiFX/The-Forge)
 
 - Implemntations :
-  - [x] Draw Textured Quad
-  - [x] Instancing
+  - [x] [Draw Textured Quad](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/01_HelloQuad)
+  - [x] [Instancing](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/02_Instancing)
   - [ ] Load Model
   - [ ] Calculate Normals
   - [ ] Gooch Shading
-  - [x] Phong Shading
+  - [x] [Phong Shading](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/03_PhongShading)
   - [ ] Light Maps
   - [ ] Lighting (Blinn-Phong)
     - [ ] Directional Light
