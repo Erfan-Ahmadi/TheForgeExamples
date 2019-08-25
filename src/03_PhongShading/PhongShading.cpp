@@ -1,7 +1,8 @@
 #include "../common.h"
 
-constexpr size_t gInstanceCount = 1;
+constexpr size_t gInstanceCount = 2;
 constexpr size_t gMaxInstanceCount = 10;
+static_assert(gInstanceCount < gMaxInstanceCount, "");
 
 
 const uint32_t	gImageCount = 3;
@@ -58,6 +59,7 @@ struct LightBuffer
 {
 	alignas(16) float3 lightPos;
 	alignas(16) float3 lightColor;
+	alignas(16) float3 viewPos;
 } lightData;
 
 
@@ -226,9 +228,9 @@ public:
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &bToggleMicroProfiler));
 
 		// Camera
-		CameraMotionParameters cmp{ 40.0f, 30.0f, 200.0f };
-		vec3                   camPos{ 0.0f, 0.0f, -1.0f };
-		vec3                   lookAt{ 0.0f, 0.0f, 0.0f };
+		CameraMotionParameters cmp{ 40.0f, 30.0f, 100.0f };
+		vec3                   camPos{ 0.0f, 0.0f, 0.8f };
+		vec3                   lookAt{ 0.0f, 0.0f, 5.0f };
 
 		pCameraController = createFpsCameraController(camPos, lookAt);
 
@@ -252,7 +254,7 @@ public:
 		{
 			removeResource(pUniformBuffers[i]);
 		}
-		
+
 		removeResource(pLightBuffer);
 
 		removeResource(pQuadVertexBuffer);
@@ -366,22 +368,20 @@ public:
 		uniformData.proj = projMat;
 
 		// Update Instance Data
-		for (unsigned int i = 0; i < gInstanceCount; ++i)
-		{
-			mat4 world = mat4::translation(
-				Vector3(
-					i / 10.0f * cos((2.0f * PI / (float)gInstanceCount * i)),
-					i / 10.0f * sin((2.0f * PI / (float)gInstanceCount * i)),
-					5 + i / 5.0f));
+		uniformData.pToWorld[0] = mat4::translation(Vector3(0, 0, 5));
 
-			world *= mat4::rotationY(currentTime * PI / 2.0f + i);
-			uniformData.pToWorld[i] = world;
-		}
+		mat4 rotateAroundPoint =
+			mat4::translation(Vector3(0, 0, 5)) *
+			mat4::rotationY(currentTime) * mat4::translation(Vector3(0, 0, -5)) *
+			mat4::translation(Vector3(0, 2, 3));
+
+		uniformData.pToWorld[1] = rotateAroundPoint * mat4::scale(Vector3(0.4f));
+
+		lightData.lightPos = v4ToF4(rotateAroundPoint * Vector4(0, 0, 0, 1)).getXYZ();
+		lightData.lightColor = float3(1);
+		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
 
 		viewMat.setTranslation(vec3(0));
-				
-		lightData.lightPos = float3{ 1.0f, 1.0f, 1.0f };
-		lightData.lightColor = float3{ 1.0f * sin(3 * currentTime), 1.0f * sin(currentTime), 1.0f * sin(2 * currentTime) };
 	}
 
 	void Draw()
@@ -443,20 +443,20 @@ public:
 				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
 				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
 			}
-			
-			cmdBindPipeline(cmd, pSecondQuadPipeline);
-			{
-				DescriptorData params[3] = {};
-				params[0].pName = "Texture";
-				params[0].ppTextures = &pQuadTexture;
-				params[1].pName = "UniformData";
-				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
-				params[2].pName = "LightData";
-				params[2].ppBuffers = &pLightBuffer;
-				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 3, params);
-				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
-				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
-			}
+
+			//cmdBindPipeline(cmd, pSecondQuadPipeline);
+			//{
+			//	DescriptorData params[3] = {};
+			//	params[0].pName = "Texture";
+			//	params[0].ppTextures = &pQuadTexture;
+			//	params[1].pName = "UniformData";
+			//	params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
+			//	params[2].pName = "LightData";
+			//	params[2].ppBuffers = &pLightBuffer;
+			//	cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 3, params);
+			//	cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
+			//	cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
+			//}
 
 			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
 			cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
@@ -476,7 +476,7 @@ public:
 		swapChainDesc.ppPresentQueues = &pGraphicsQueue;
 		swapChainDesc.mImageCount = gImageCount;
 		swapChainDesc.mSampleCount = SAMPLE_COUNT_1;
-		swapChainDesc.mEnableVsync = false;
+		swapChainDesc.mEnableVsync = true;
 		swapChainDesc.mWidth = mSettings.mWidth;
 		swapChainDesc.mHeight = mSettings.mHeight;
 		swapChainDesc.mColorFormat = getRecommendedSwapchainFormat(true);
@@ -607,6 +607,6 @@ public:
 		pVertices[35] = Vertex{ point2, down, bottom_right };
 		*vertexData = pVertices;
 	}
-	};
+};
 
 DEFINE_APPLICATION_MAIN(PhongShading)
