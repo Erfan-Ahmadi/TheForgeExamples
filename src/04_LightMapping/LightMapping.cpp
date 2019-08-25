@@ -1,8 +1,17 @@
 #include "../common.h"
 #include "Common_3/ThirdParty/OpenSource/Nothings/stb_image.h"
 
-constexpr size_t gInstanceCount = 2;
-constexpr size_t gMaxInstanceCount = 10;
+constexpr size_t gInstanceCount = 1;
+constexpr size_t gMaxInstanceCount = 8;
+static_assert(gInstanceCount <= gMaxInstanceCount, "");
+
+constexpr size_t gDirectionalLights = 1;
+constexpr size_t gMaxDirectionalLights = 1;
+static_assert(gDirectionalLights <= gMaxDirectionalLights, "");
+
+constexpr size_t gMaxPointLights = 8;
+constexpr size_t gMaxSpotLights = 8;
+
 static_assert(gInstanceCount < gMaxInstanceCount, "");
 
 
@@ -57,10 +66,17 @@ struct UniformBuffer
 	mat4	pToWorld[gMaxInstanceCount];
 } uniformData;
 
+struct DirectionalLight {
+    alignas(16) float3 direction;
+    alignas(16) float3 ambient;
+    alignas(16) float3 diffuse;
+    alignas(16) float3 specular;
+};
+
 struct LightBuffer
 {
-	alignas(16) float3 lightPos;
-	alignas(16) float3 lightColor;
+	alignas(4) int numDirectionalLights;
+	alignas(16) DirectionalLight directionalLights[gMaxDirectionalLights];
 	alignas(16) float3 viewPos;
 } lightData;
 
@@ -273,6 +289,7 @@ public:
 
 		removeResource(pCubeVertexBuffer);
 		removeResource(pCubeTexture);
+		removeResource(pCubeSpecularTexture);
 
 		removeDescriptorBinder(pRenderer, pDescriptorBinder);
 
@@ -384,15 +401,19 @@ public:
 		// Update Instance Data
 		uniformData.pToWorld[0] = mat4::translation(Vector3(0, 0, 5));
 
-		mat4 rotateAroundPoint =
-			mat4::translation(Vector3(0, 0, 5)) *
-			mat4::rotationY(currentTime) * mat4::translation(Vector3(0, 0, -5)) *
-			mat4::translation(Vector3(0, 2, 3));
+		//mat4 rotateAroundPoint =
+		//	mat4::translation(Vector3(0, 0, 5)) *
+		//	mat4::rotationY(currentTime) * mat4::translation(Vector3(0, 0, -5)) *
+		//	mat4::translation(Vector3(0, 2, 3));
 
-		uniformData.pToWorld[1] = rotateAroundPoint * mat4::scale(Vector3(0.4f));
-
-		lightData.lightPos = v4ToF4(rotateAroundPoint * Vector4(0, 0, 0, 1)).getXYZ();
-		lightData.lightColor = float3(1);
+		//uniformData.pToWorld[1] = rotateAroundPoint * mat4::scale(Vector3(0.4f));
+		
+		lightData.numDirectionalLights = 1;
+		lightData.directionalLights[0].direction = float3 {0.0f, -1.0f, 1.0f};
+		lightData.directionalLights[0].ambient = float3 {0.1f, 0.1f, 0.1f};
+		lightData.directionalLights[0].diffuse = float3 {1.0f, 1.0f, 1.0f};
+		lightData.directionalLights[0].specular = float3 {0.3f, 0.3f, 0.3f};
+		lightData.numDirectionalLights = gDirectionalLights;
 		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
 
 		viewMat.setTranslation(vec3(0));
