@@ -7,7 +7,7 @@
   - [ ] Calculate Normals
   - [ ] Gooch Shading
   - [x] [Phong Shading](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/03_PhongShading)
-  - [ ] Light Maps
+  - [x] [Light Maps](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/04_LightMapping)
   - [ ] Lighting (Blinn-Phong)
     - [ ] Directional Light
     - [ ] Point Light
