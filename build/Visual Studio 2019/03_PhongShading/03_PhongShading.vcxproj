@@ -35,6 +35,9 @@
   <ItemGroup>
     <ClCompile Include="..\..\..\src\03_PhongShading\PhongShading.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\src\common.h" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{f2cc3cec-b0cf-4669-ad2d-e091df98868d}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>

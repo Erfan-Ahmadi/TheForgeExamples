@@ -35,6 +35,9 @@
   <ItemGroup>
     <ClCompile Include="..\..\..\src\04_LightMapping\LightMapping.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\src\common.h" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{dcf77920-ff99-45fb-86f5-46145c8f426a}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>

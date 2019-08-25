@@ -14,8 +14,6 @@
 //ui
 #include "Middleware_3/UI/AppUI.h"
 
-#include "Common_3/ThirdParty/OpenSource/Nothings/stb_image.h"
-
 namespace meshes
 {
 	// No Indexing

@@ -1,4 +1,5 @@
 #include "../common.h"
+#include "Common_3/ThirdParty/OpenSource/Nothings/stb_image.h"
 
 constexpr size_t gInstanceCount = 2;
 constexpr size_t gMaxInstanceCount = 10;
@@ -8,7 +9,7 @@ static_assert(gInstanceCount < gMaxInstanceCount, "");
 const uint32_t	gImageCount = 3;
 bool			bToggleMicroProfiler = false;
 bool			bPrevToggleMicroProfiler = false;
-uint32_t		gNumQuadPoints;
+uint32_t		gNumCubePoints;
 
 Renderer* pRenderer = NULL;
 
@@ -29,11 +30,12 @@ SwapChain* pSwapChain = NULL;
 Pipeline* pGraphicsPipeline = NULL;
 RootSignature* pRootSignature = NULL;
 
-Shader* pQuadShader = NULL;
-Texture* pQuadTexture = NULL;
-Buffer* pQuadVertexBuffer = NULL;
-Pipeline* pQuadPipeline = NULL;
-Pipeline* pSecondQuadPipeline = NULL;
+Shader* pCubeShader = NULL;
+Texture* pCubeTexture = NULL;
+Texture* pCubeSpecularTexture = NULL;
+Buffer* pCubeVertexBuffer = NULL;
+Pipeline* pCubePipeline = NULL;
+Pipeline* pCubePipeline2 = NULL;
 
 uint32_t			gFrameIndex = 0;
 
@@ -76,7 +78,7 @@ const char* pTexturesFileNames[] = { "Skybox_front5" };
 
 const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_BinShaders
-	"../../../../src/03_PhongShading/",												// FSR_SrcShaders
+	"../../../../src/04_LightMapping/",												// FSR_SrcShaders
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Textures
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Meshes
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
@@ -122,17 +124,29 @@ public:
 		initResourceLoaderInterface(pRenderer);
 
 		// Shader
-		ShaderLoadDesc quadShaderDesc = {};
-		quadShaderDesc.mStages[0] = { "cube.vert", NULL, 0, FSR_SrcShaders };
-		quadShaderDesc.mStages[1] = { "cube.frag", NULL, 0, FSR_SrcShaders };
-		addShader(pRenderer, &quadShaderDesc, &pQuadShader);
+		ShaderLoadDesc cubeShaderDesc = {};
+		cubeShaderDesc.mStages[0] = { "cube.vert", NULL, 0, FSR_SrcShaders };
+		cubeShaderDesc.mStages[1] = { "cube.frag", NULL, 0, FSR_SrcShaders };
+		addShader(pRenderer, &cubeShaderDesc, &pCubeShader);
 
-		// Texture
+		// Main Texture
+		int width, height, channels;
+		uint8_t* raw_image = stbi_load("../../../../src/04_LightMapping/Textures/container2.png", &width, &height, &channels, 4);
+
+		RawImageData raw_image_data = { raw_image, ImageFormat::RGBA8, (uint32_t)width, (uint32_t)height, 1, 1, 1 };
+
 		TextureLoadDesc textureDesc = {};
 		textureDesc.mRoot = FSR_Textures;
-		textureDesc.pFilename = pTexturesFileNames[0];
-		textureDesc.ppTexture = &pQuadTexture;
-		addResource(&textureDesc, true); // What is batch and SyncToken?
+		textureDesc.pRawImageData = &raw_image_data;
+		textureDesc.ppTexture = &pCubeTexture;
+		addResource(&textureDesc, true);
+
+		// Specular Texture
+		raw_image = stbi_load("../../../../src/04_LightMapping/Textures/container2_specular.png", &width, &height, &channels, 4);
+		textureDesc.pRawImageData = &raw_image_data;
+		raw_image_data = { raw_image, ImageFormat::RGBA8, (uint32_t)width, (uint32_t)height, 1, 1, 1 };
+		textureDesc.ppTexture = &pCubeSpecularTexture;
+		addResource(&textureDesc, true);
 
 		// Sampler
 		SamplerDesc samplerDesc = { FILTER_LINEAR,
@@ -147,27 +161,27 @@ public:
 		getCubeVertexData(&pVertices);
 
 		// Vertex Buffer
-		BufferLoadDesc quadVBufferDesc = {};
-		quadVBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
-		quadVBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
-		quadVBufferDesc.mDesc.mSize = cubeDataSize;
-		quadVBufferDesc.mDesc.mVertexStride = sizeof(Vertex);
-		quadVBufferDesc.pData = pVertices;
-		quadVBufferDesc.ppBuffer = &pQuadVertexBuffer;
-		addResource(&quadVBufferDesc);
+		BufferLoadDesc cubeVBufferDesc = {};
+		cubeVBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
+		cubeVBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+		cubeVBufferDesc.mDesc.mSize = cubeDataSize;
+		cubeVBufferDesc.mDesc.mVertexStride = sizeof(Vertex);
+		cubeVBufferDesc.pData = pVertices;
+		cubeVBufferDesc.ppBuffer = &pCubeVertexBuffer;
+		addResource(&cubeVBufferDesc);
 
 		// Uniform Buffer
-		BufferLoadDesc quadUniformBufferDesc = {};
-		quadUniformBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		quadUniformBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-		quadUniformBufferDesc.mDesc.mSize = sizeof(UniformBuffer);
-		quadUniformBufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
-		quadUniformBufferDesc.pData = NULL;
+		BufferLoadDesc cubeUniformBufferDesc = {};
+		cubeUniformBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		cubeUniformBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		cubeUniformBufferDesc.mDesc.mSize = sizeof(UniformBuffer);
+		cubeUniformBufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+		cubeUniformBufferDesc.pData = NULL;
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
-			quadUniformBufferDesc.ppBuffer = &pUniformBuffers[i];
-			addResource(&quadUniformBufferDesc);
+			cubeUniformBufferDesc.ppBuffer = &pUniformBuffers[i];
+			addResource(&cubeUniformBufferDesc);
 		}
 
 		// Light Uniform Buffer
@@ -185,7 +199,7 @@ public:
 
 		RootSignatureDesc rootDesc = {};
 		rootDesc.mShaderCount = 1;
-		rootDesc.ppShaders = &pQuadShader;
+		rootDesc.ppShaders = &pCubeShader;
 		rootDesc.mStaticSamplerCount = 1;
 		rootDesc.ppStaticSamplers = &pSampler;
 		rootDesc.ppStaticSamplerNames = pStaticSamplers;
@@ -257,13 +271,13 @@ public:
 
 		removeResource(pLightBuffer);
 
-		removeResource(pQuadVertexBuffer);
-		removeResource(pQuadTexture);
+		removeResource(pCubeVertexBuffer);
+		removeResource(pCubeTexture);
 
 		removeDescriptorBinder(pRenderer, pDescriptorBinder);
 
 		removeSampler(pRenderer, pSampler);
-		removeShader(pRenderer, pQuadShader);
+		removeShader(pRenderer, pCubeShader);
 		removeRootSignature(pRenderer, pRootSignature);
 
 		removeDepthState(pDepthState);
@@ -327,13 +341,13 @@ public:
 		pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
 		pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
 		pipelineSettings.pRootSignature = pRootSignature;
-		pipelineSettings.pShaderProgram = pQuadShader;
+		pipelineSettings.pShaderProgram = pCubeShader;
 		pipelineSettings.pVertexLayout = &vertexLayout;
 		pipelineSettings.pRasterizerState = pRastState;
-		addPipeline(pRenderer, &desc, &pQuadPipeline);
+		addPipeline(pRenderer, &desc, &pCubePipeline);
 
 		pipelineSettings.pRasterizerState = pSecondRastState;
-		addPipeline(pRenderer, &desc, &pSecondQuadPipeline);
+		addPipeline(pRenderer, &desc, &pCubePipeline2);
 
 		return true;
 	}
@@ -344,7 +358,7 @@ public:
 
 		gAppUI.Unload();
 
-		removePipeline(pRenderer, pQuadPipeline);
+		removePipeline(pRenderer, pCubePipeline);
 
 		removeSwapChain(pRenderer, pSwapChain);
 		removeRenderTarget(pRenderer, pDepthBuffer);
@@ -430,33 +444,22 @@ public:
 			cmdSetViewport(cmd, 0.0f, 0.0f, (float)pRenderTarget->mDesc.mWidth, (float)pRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
 			cmdSetScissor(cmd, 0, 0, pRenderTarget->mDesc.mWidth, pRenderTarget->mDesc.mHeight);
 
-			cmdBindPipeline(cmd, pQuadPipeline);
-			{
-				DescriptorData params[3] = {};
-				params[0].pName = "Texture";
-				params[0].ppTextures = &pQuadTexture;
-				params[1].pName = "UniformData";
-				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
-				params[2].pName = "LightData";
-				params[2].ppBuffers = &pLightBuffer;
-				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 3, params);
-				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
-				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
-			}
+			DescriptorData params[4] = {};
+			params[0].pName = "Texture";
+			params[0].ppTextures = &pCubeTexture;
+			params[1].pName = "UniformData";
+			params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
+			params[2].pName = "LightData";
+			params[2].ppBuffers = &pLightBuffer;
+			params[3].pName = "TextureSpecular";
+			params[3].ppTextures = &pCubeSpecularTexture;
+			cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 4, params);
+			cmdBindVertexBuffer(cmd, 1, &pCubeVertexBuffer, NULL);
 
-			//cmdBindPipeline(cmd, pSecondQuadPipeline);
-			//{
-			//	DescriptorData params[3] = {};
-			//	params[0].pName = "Texture";
-			//	params[0].ppTextures = &pQuadTexture;
-			//	params[1].pName = "UniformData";
-			//	params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
-			//	params[2].pName = "LightData";
-			//	params[2].ppBuffers = &pLightBuffer;
-			//	cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 3, params);
-			//	cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
-			//	cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
-			//}
+			cmdBindPipeline(cmd, pCubePipeline);
+			cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
+			cmdBindPipeline(cmd, pCubePipeline2);
+			cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
 
 			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
 			cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
@@ -501,7 +504,7 @@ public:
 		return pDepthBuffer != NULL;
 	}
 
-	const char* GetName() { return "03_PhongShading"; }
+	const char* GetName() { return "04_LightMapping"; }
 
 	void RecenterCameraView(float maxDistance, vec3 lookAt = vec3(0))
 	{

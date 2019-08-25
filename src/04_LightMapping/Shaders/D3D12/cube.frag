@@ -13,8 +13,9 @@ struct VSOutput {
     float2 TexCoord		: TEXCOORD;
 };
 
-SamplerState	uSampler0	: register(s2);
-Texture2D		Texture		: register(t1);
+SamplerState	uSampler0		: register(s1);
+Texture2D		Texture			: register(t2);
+Texture2D		TextureSpecular	: register(t3);
 
 float4 main(VSOutput input) : SV_TARGET
 {
@@ -37,7 +38,9 @@ float4 main(VSOutput input) : SV_TARGET
 	float spec = pow(max(dot(reflectDir, viewDir), 0.0), 64);
 	float3 specular = specularStrenght * spec * lightColor;  
 
-	float3 color = (ambient + diffuse + specular) * float3(0.3f, 0.3, 0.5f);//(Texture.Sample(uSampler0, input.TexCoord).xyz);
+	float3 color =
+		(ambient + diffuse) * Texture.Sample(uSampler0, input.TexCoord).xyz +
+		(specular) * TextureSpecular.Sample(uSampler0, input.TexCoord).xyz;
 
     return float4(color, 1.0f);
 }
