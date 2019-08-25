@@ -1,7 +1,7 @@
 #include "../common.h"
 
-constexpr size_t gInstanceCount = 128;
-constexpr size_t gUniformDataSize = (2 + gInstanceCount) * sizeof(mat4);
+constexpr size_t gInstanceCount = 20;
+constexpr size_t gMaxInstanceCount = 128;
 
 
 const uint32_t	gImageCount = 3;
@@ -50,7 +50,7 @@ struct UniformBuffer
 {
 	mat4 view;
 	mat4 proj;
-	mat4 pToWorld[gInstanceCount];
+	mat4 pToWorld[gMaxInstanceCount];
 } uniformData;
 
 const char* pTexturesFileNames[] = { "Skybox_front5" };
@@ -169,7 +169,7 @@ public:
 		BufferLoadDesc quadUniformBufferDesc = {};
 		quadUniformBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		quadUniformBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-		quadUniformBufferDesc.mDesc.mSize = gUniformDataSize;
+		quadUniformBufferDesc.mDesc.mSize = sizeof(UniformBuffer);
 		quadUniformBufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
 		quadUniformBufferDesc.pData = NULL;
 
@@ -395,7 +395,7 @@ public:
 			waitForFences(pRenderer, 1, &pRenderCompleteFence);
 
 		// Update uniform buffers
-		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &uniformData, 0, 0, gUniformDataSize};
+		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &uniformData };
 		updateResource(&viewProjCbv);
 
 		// Load Actions
