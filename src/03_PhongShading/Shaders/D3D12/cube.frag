@@ -1,8 +1,8 @@
 
 cbuffer LightData : register(b0)
 {
-	float4 lightPos;
-	float4 lightColor;
+	float3 lightPos;
+	float3 lightColor;
 };
 
 struct VSOutput {
@@ -16,8 +16,10 @@ Texture2D		Texture		: register(t1);
 float4 main(VSOutput input) : SV_TARGET
 {   
 	// Ambient
-	float ambientStrength = 1.0;
-    float4 ambient = float4(1,1,1,1);
+	float ambientStrength = 0.2f;
+    float3 ambient = ambientStrength * lightColor;
 
-    return lightColor * Texture.Sample(uSampler0, input.TexCoord);
+	float3 color = (ambient * Texture.Sample(uSampler0, input.TexCoord).xyz);
+
+    return float4(color, 1.0f);
 }

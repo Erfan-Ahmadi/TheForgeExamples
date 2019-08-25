@@ -1,6 +1,7 @@
 #include "../common.h"
 
 constexpr size_t gInstanceCount = 1;
+constexpr size_t gMaxInstanceCount = 10;
 
 
 const uint32_t	gImageCount = 3;
@@ -48,15 +49,15 @@ Buffer* pUniformBuffers[gImageCount] = { NULL };
 
 struct UniformBuffer
 {
-	mat4 view;
-	mat4 proj;
-	mat4 pToWorld[gInstanceCount];
+	mat4	view;
+	mat4	proj;
+	mat4	pToWorld[gMaxInstanceCount];
 } uniformData;
 
 struct LightBuffer
 {
-	float4 lightPos;
-	float4 lightColor;
+	alignas(16) float3 lightPos;
+	alignas(16) float3 lightColor;
 } lightData;
 
 
@@ -176,10 +177,6 @@ public:
 		lightUniformBufferDesc.pData = NULL;
 		lightUniformBufferDesc.ppBuffer = &pLightBuffer;
 		addResource(&lightUniformBufferDesc);
-		
-		lightData.lightPos = float4{ 1.0f, 1.0f, 1.0f, 1.0f };
-		lightData.lightColor = float4{ 1.0f, 1.0f, 1.0f, 1.0f };
-		
 
 		// Resource Binding
 		const char* pStaticSamplers[] = { "uSampler0" };
@@ -382,6 +379,9 @@ public:
 		}
 
 		viewMat.setTranslation(vec3(0));
+				
+		lightData.lightPos = float3{ 1.0f, 1.0f, 1.0f };
+		lightData.lightColor = float3{ 1.0f * sin(3 * currentTime), 1.0f * sin(currentTime), 1.0f * sin(2 * currentTime) };
 	}
 
 	void Draw()
@@ -398,7 +398,7 @@ public:
 			waitForFences(pRenderer, 1, &pRenderCompleteFence);
 
 		// Update uniform buffers
-		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &uniformData, 0, 0, cubeDataSize };
+		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &uniformData };
 		updateResource(&viewProjCbv);
 
 		// Update light uniform buffers
@@ -443,20 +443,20 @@ public:
 				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
 				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
 			}
-
-			//cmdBindPipeline(cmd, pSecondQuadPipeline);
-			//{
-			//	DescriptorData params[3] = {};
-			//	params[0].pName = "Texture";
-			//	params[0].ppTextures = &pQuadTexture;
-			//	params[1].pName = "UniformData";
-			//	params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
-			//	params[2].pName = "LightData";
-			//	params[2].ppBuffers = &pLightBuffer;
-			//	cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 3, params);
-			//	cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
-			//	cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
-			//}
+			
+			cmdBindPipeline(cmd, pSecondQuadPipeline);
+			{
+				DescriptorData params[3] = {};
+				params[0].pName = "Texture";
+				params[0].ppTextures = &pQuadTexture;
+				params[1].pName = "UniformData";
+				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
+				params[2].pName = "LightData";
+				params[2].ppBuffers = &pLightBuffer;
+				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 3, params);
+				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
+				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
+			}
 
 			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
 			cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
