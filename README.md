@@ -6,7 +6,7 @@
   - [ ] Load Model
   - [ ] Calculate Normals
   - [ ] Gooch Shading
-  - [ ] Phong Shading
+  - [x] Phong Shading
   - [ ] Light Maps
   - [ ] Lighting (Blinn-Phong)
     - [ ] Directional Light
