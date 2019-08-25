@@ -16,4 +16,5 @@
   - [ ] [Ambient Occlusion](https://github.com/Erfan-Ahmadi/AmbientOcclusion)
 ### Build
   - [x] Visual Studio 2017:
-  Put Repository folder next to cloned [The-Forge API](https://github.com/ConfettiFX/The-Forge) repository folder
+    * Put Repository folder next to cloned [The-Forge API](https://github.com/ConfettiFX/The-Forge) repository folder
+    * The library files needed next to your application's executable is in "\third-party\The-Forge-Lib"
