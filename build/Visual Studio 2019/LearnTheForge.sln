@@ -9,6 +9,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "02_Instancing", "02_Instanc
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "03_PhongShading", "03_PhongShading\03_PhongShading.vcxproj", "{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "04_LightMapping", "04_LightMapping\04_LightMapping.vcxproj", "{DCF77920-FF99-45FB-86F5-46145C8F426A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		DebugDx|x64 = DebugDx|x64
@@ -55,6 +57,18 @@ Global
 		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.ReleaseDx11|x64.Build.0 = ReleaseDx11|x64
 		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.ReleaseVk|x64.ActiveCfg = ReleaseVk|x64
 		{F2CC3CEC-B0CF-4669-AD2D-E091DF98868D}.ReleaseVk|x64.Build.0 = ReleaseVk|x64
+		{DCF77920-FF99-45FB-86F5-46145C8F426A}.DebugDx|x64.ActiveCfg = DebugDx|x64
+		{DCF77920-FF99-45FB-86F5-46145C8F426A}.DebugDx|x64.Build.0 = DebugDx|x64
+		{DCF77920-FF99-45FB-86F5-46145C8F426A}.DebugDx11|x64.ActiveCfg = DebugDx11|x64
+		{DCF77920-FF99-45FB-86F5-46145C8F426A}.DebugDx11|x64.Build.0 = DebugDx11|x64
+		{DCF77920-FF99-45FB-86F5-46145C8F426A}.DebugVk|x64.ActiveCfg = DebugVk|x64
+		{DCF77920-FF99-45FB-86F5-46145C8F426A}.DebugVk|x64.Build.0 = DebugVk|x64
+		{DCF77920-FF99-45FB-86F5-46145C8F426A}.ReleaseDx|x64.ActiveCfg = ReleaseDx|x64
+		{DCF77920-FF99-45FB-86F5-46145C8F426A}.ReleaseDx|x64.Build.0 = ReleaseDx|x64
+		{DCF77920-FF99-45FB-86F5-46145C8F426A}.ReleaseDx11|x64.ActiveCfg = ReleaseDx11|x64
+		{DCF77920-FF99-45FB-86F5-46145C8F426A}.ReleaseDx11|x64.Build.0 = ReleaseDx11|x64
+		{DCF77920-FF99-45FB-86F5-46145C8F426A}.ReleaseVk|x64.ActiveCfg = ReleaseVk|x64
+		{DCF77920-FF99-45FB-86F5-46145C8F426A}.ReleaseVk|x64.Build.0 = ReleaseVk|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -37,7 +37,7 @@ float4 main(VSOutput input) : SV_TARGET
 	float spec = pow(max(dot(reflectDir, viewDir), 0.0), 64);
 	float3 specular = specularStrenght * spec * lightColor;  
 
-	float3 color = (ambient + diffuse + specular) * Texture.Sample(uSampler0, input.TexCoord).xyz;
+	float3 color = (ambient + diffuse + specular) * float3(0.3f, 0.3, 0.5f);//(Texture.Sample(uSampler0, input.TexCoord).xyz);
 
     return float4(color, 1.0f);
 }
