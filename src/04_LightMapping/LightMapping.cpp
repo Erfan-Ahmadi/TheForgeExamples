@@ -1,7 +1,7 @@
 #include "../common.h"
 #include "Common_3/ThirdParty/OpenSource/Nothings/stb_image.h"
 
-constexpr size_t gInstanceCount = 1;
+constexpr size_t gInstanceCount = 5;
 constexpr size_t gMaxInstanceCount = 8;
 static_assert(gInstanceCount <= gMaxInstanceCount, "");
 
@@ -11,8 +11,6 @@ static_assert(gDirectionalLights <= gMaxDirectionalLights, "");
 
 constexpr size_t gMaxPointLights = 8;
 constexpr size_t gMaxSpotLights = 8;
-
-static_assert(gInstanceCount < gMaxInstanceCount, "");
 
 
 const uint32_t	gImageCount = 3;
@@ -414,14 +412,12 @@ public:
 		uniformData.proj = projMat;
 
 		// Update Instance Data
-		uniformData.pToWorld[0] = mat4::translation(Vector3(0, 0, 5));
-
-		//mat4 rotateAroundPoint =
-		//	mat4::translation(Vector3(0, 0, 5)) *
-		//	mat4::rotationY(currentTime) * mat4::translation(Vector3(0, 0, -5)) *
-		//	mat4::translation(Vector3(0, 2, 3));
-
-		//uniformData.pToWorld[1] = rotateAroundPoint * mat4::scale(Vector3(0.4f));
+		for (uint32_t i = 0; i < gInstanceCount; ++i)
+		{
+			uniformData.pToWorld[i] = mat4::translation(Vector3(-4.0f + 2.0f * i, -1, 5)) *
+				mat4::rotationX(i % 2 * currentTime) *
+				mat4::rotationY((i) % 3 * currentTime);
+		}
 
 		lightData.numDirectionalLights = 1;
 		directionalLights[0].direction = float3{ 0.0f, -1.0f, 1.0f };
@@ -454,9 +450,9 @@ public:
 		// Update light uniform buffers
 		BufferUpdateDesc lightCbv = { pLightBuffer, &lightData };
 		updateResource(&lightCbv);
-		
+
 		// Update light uniform buffers
-		BufferUpdateDesc dirLights = { pDirLightsBuffer, &directionalLights};
+		BufferUpdateDesc dirLights = { pDirLightsBuffer, &directionalLights };
 		updateResource(&dirLights);
 
 		// Load Actions

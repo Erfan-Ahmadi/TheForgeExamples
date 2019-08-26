@@ -1,4 +1,4 @@
-#define MAX_INSTANCES 128
+#define MAX_INSTANCES 8
 
 cbuffer UniformData : register(b0)
 {
@@ -54,7 +54,7 @@ struct VSOutput {
 VSOutput main(VSInput input, uint InstanceID : SV_InstanceID)
 {
 	VSOutput result;
-	result.Normal = input.Normal;  
+	result.Normal = mul(transpose(inverse(world[InstanceID])), input.Normal);  
 	result.FragPos = mul(world[InstanceID], input.Position);
 	result.Position = mul(proj, mul(view, result.FragPos));
 	result.TexCoord = input.TexCoord;
