@@ -57,6 +57,7 @@ ICameraController* pCameraController = NULL;
 GuiComponent* pGui = NULL;
 
 Buffer* pLightBuffer = NULL;
+Buffer* pDirLightsBuffer = NULL;
 Buffer* pUniformBuffers[gImageCount] = { NULL };
 
 struct UniformBuffer
@@ -67,17 +68,18 @@ struct UniformBuffer
 } uniformData;
 
 struct DirectionalLight {
-    alignas(16) float3 direction;
-    alignas(16) float3 ambient;
-    alignas(16) float3 diffuse;
-    alignas(16) float3 specular;
+	float3 direction;
+	float3 ambient;
+	float3 diffuse;
+	float3 specular;
 };
+
+DirectionalLight directionalLights[gMaxDirectionalLights];
 
 struct LightBuffer
 {
-	alignas(4) int numDirectionalLights;
-	alignas(16) DirectionalLight directionalLights[gMaxDirectionalLights];
-	alignas(16) float3 viewPos;
+	int numDirectionalLights;
+	float3 viewPos;
 } lightData;
 
 
@@ -173,43 +175,6 @@ public:
 									ADDRESS_MODE_CLAMP_TO_EDGE };
 		addSampler(pRenderer, &samplerDesc, &pSampler);
 
-		Vertex* pVertices;
-		getCubeVertexData(&pVertices);
-
-		// Vertex Buffer
-		BufferLoadDesc cubeVBufferDesc = {};
-		cubeVBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
-		cubeVBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
-		cubeVBufferDesc.mDesc.mSize = cubeDataSize;
-		cubeVBufferDesc.mDesc.mVertexStride = sizeof(Vertex);
-		cubeVBufferDesc.pData = pVertices;
-		cubeVBufferDesc.ppBuffer = &pCubeVertexBuffer;
-		addResource(&cubeVBufferDesc);
-
-		// Uniform Buffer
-		BufferLoadDesc cubeUniformBufferDesc = {};
-		cubeUniformBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		cubeUniformBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-		cubeUniformBufferDesc.mDesc.mSize = sizeof(UniformBuffer);
-		cubeUniformBufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
-		cubeUniformBufferDesc.pData = NULL;
-
-		for (uint32_t i = 0; i < gImageCount; ++i)
-		{
-			cubeUniformBufferDesc.ppBuffer = &pUniformBuffers[i];
-			addResource(&cubeUniformBufferDesc);
-		}
-
-		// Light Uniform Buffer
-		BufferLoadDesc lightUniformBufferDesc = {};
-		lightUniformBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		lightUniformBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-		lightUniformBufferDesc.mDesc.mSize = sizeof(LightBuffer);
-		lightUniformBufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
-		lightUniformBufferDesc.pData = NULL;
-		lightUniformBufferDesc.ppBuffer = &pLightBuffer;
-		addResource(&lightUniformBufferDesc);
-
 		// Resource Binding
 		const char* pStaticSamplers[] = { "uSampler0" };
 
@@ -223,6 +188,56 @@ public:
 
 		DescriptorBinderDesc descriptorBinderDescs[1] = { { pRootSignature } };
 		addDescriptorBinder(pRenderer, 0, 1, descriptorBinderDescs, &pDescriptorBinder);
+
+		BufferLoadDesc bufferDesc = {};
+
+		// Vertex Buffer
+		Vertex* pVertices;
+		getCubeVertexData(&pVertices);
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+		bufferDesc.mDesc.mSize = cubeDataSize;
+		bufferDesc.mDesc.mVertexStride = sizeof(Vertex);
+		bufferDesc.pData = pVertices;
+		bufferDesc.ppBuffer = &pCubeVertexBuffer;
+		addResource(&bufferDesc);
+
+		// Uniform Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mSize = sizeof(UniformBuffer);
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+		bufferDesc.pData = NULL;
+
+		for (uint32_t i = 0; i < gImageCount; ++i)
+		{
+			bufferDesc.ppBuffer = &pUniformBuffers[i];
+			addResource(&bufferDesc);
+		}
+
+		// Light Uniform Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mSize = sizeof(LightBuffer);
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+		bufferDesc.pData = NULL;
+		bufferDesc.ppBuffer = &pLightBuffer;
+		addResource(&bufferDesc);
+
+		// DirLights Structured Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
+		bufferDesc.mDesc.mFirstElement = 0;
+		bufferDesc.mDesc.mElementCount = gDirectionalLights;
+		bufferDesc.mDesc.mStructStride = sizeof(DirectionalLight);
+		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
+		bufferDesc.pData = NULL;
+		bufferDesc.ppBuffer = &pDirLightsBuffer;
+		addResource(&bufferDesc);
 
 		// Rasterizer State
 		RasterizerStateDesc rasterizerStateDesc = {};
@@ -407,12 +422,12 @@ public:
 		//	mat4::translation(Vector3(0, 2, 3));
 
 		//uniformData.pToWorld[1] = rotateAroundPoint * mat4::scale(Vector3(0.4f));
-		
+
 		lightData.numDirectionalLights = 1;
-		lightData.directionalLights[0].direction = float3 {0.0f, -1.0f, 1.0f};
-		lightData.directionalLights[0].ambient = float3 {0.1f, 0.1f, 0.1f};
-		lightData.directionalLights[0].diffuse = float3 {1.0f, 1.0f, 1.0f};
-		lightData.directionalLights[0].specular = float3 {0.3f, 0.3f, 0.3f};
+		directionalLights[0].direction = float3{ 0.0f, -1.0f, 1.0f };
+		directionalLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
+		directionalLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
+		directionalLights[0].specular = float3{ 0.3f, 0.3f, 0.3f };
 		lightData.numDirectionalLights = gDirectionalLights;
 		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
 
@@ -439,6 +454,10 @@ public:
 		// Update light uniform buffers
 		BufferUpdateDesc lightCbv = { pLightBuffer, &lightData };
 		updateResource(&lightCbv);
+		
+		// Update light uniform buffers
+		BufferUpdateDesc dirLights = { pDirLightsBuffer, &directionalLights};
+		updateResource(&dirLights);
 
 		// Load Actions
 		LoadActionsDesc loadActions = {};
@@ -465,7 +484,7 @@ public:
 			cmdSetViewport(cmd, 0.0f, 0.0f, (float)pRenderTarget->mDesc.mWidth, (float)pRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
 			cmdSetScissor(cmd, 0, 0, pRenderTarget->mDesc.mWidth, pRenderTarget->mDesc.mHeight);
 
-			DescriptorData params[4] = {};
+			DescriptorData params[5] = {};
 			params[0].pName = "Texture";
 			params[0].ppTextures = &pCubeTexture;
 			params[1].pName = "UniformData";
@@ -474,13 +493,15 @@ public:
 			params[2].ppBuffers = &pLightBuffer;
 			params[3].pName = "TextureSpecular";
 			params[3].ppTextures = &pCubeSpecularTexture;
-			cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 4, params);
-			cmdBindVertexBuffer(cmd, 1, &pCubeVertexBuffer, NULL);
+			params[4].pName = "DirectionalLights";
+			params[4].ppBuffers = &pDirLightsBuffer;
 
 			cmdBindPipeline(cmd, pCubePipeline);
-			cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
-			cmdBindPipeline(cmd, pCubePipeline2);
-			cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
+			{
+				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 5, params);
+				cmdBindVertexBuffer(cmd, 1, &pCubeVertexBuffer, NULL);
+				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
+			}
 
 			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
 			cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);

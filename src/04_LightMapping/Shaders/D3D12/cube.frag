@@ -1,5 +1,3 @@
-#define MAX_DIR_LIGHTS 1
-
 struct DirectionalLight {
     float3 direction;
     float3 ambient;
@@ -7,10 +5,11 @@ struct DirectionalLight {
     float3 specular;
 };
 
+StructuredBuffer <DirectionalLight> DirectionalLights : register(t0);
+
 cbuffer LightData : register(b0)
 {
 	int numDirectionalLights;
-	DirectionalLight directionalLights[MAX_DIR_LIGHTS];
 	float3 viewPos;
 };
 
@@ -35,7 +34,7 @@ float4 main(VSOutput input) : SV_TARGET
 	float3 result;
 
 	for(int i = 0; i < numDirectionalLights; ++i)
-		result += calculateDirectionalLight(directionalLights[i], normal, viewDir, input.TexCoord);
+		result += calculateDirectionalLight(DirectionalLights[i], normal, viewDir, input.TexCoord);
 
     return float4(result, 1.0f);
 }
