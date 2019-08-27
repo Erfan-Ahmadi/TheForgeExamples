@@ -9,9 +9,13 @@ constexpr size_t gDirectionalLights = 1;
 constexpr size_t gMaxDirectionalLights = 1;
 static_assert(gDirectionalLights <= gMaxDirectionalLights, "");
 
+constexpr size_t gPointLights = 1;
 constexpr size_t gMaxPointLights = 8;
-constexpr size_t gMaxSpotLights = 8;
+static_assert(gPointLights <= gMaxPointLights, "");
 
+constexpr size_t gSpotLights = 1;
+constexpr size_t gMaxSpotLights = 8;
+static_assert(gSpotLights <= gMaxSpotLights, "");
 
 const uint32_t	gImageCount = 3;
 bool			bToggleMicroProfiler = false;
@@ -54,8 +58,6 @@ ICameraController* pCameraController = NULL;
 
 GuiComponent* pGui = NULL;
 
-Buffer* pLightBuffer = NULL;
-Buffer* pDirLightsBuffer = NULL;
 Buffer* pUniformBuffers[gImageCount] = { NULL };
 
 struct UniformBuffer
@@ -65,21 +67,41 @@ struct UniformBuffer
 	mat4	pToWorld[gMaxInstanceCount];
 } uniformData;
 
-struct DirectionalLight {
+struct DirectionalLight 
+{
 	float3 direction;
 	float3 ambient;
 	float3 diffuse;
 	float3 specular;
 };
 
-DirectionalLight directionalLights[gMaxDirectionalLights];
+struct PointLight 
+{
+	float3 position;
+	float3 ambient;
+	float3 diffuse;
+	float3 specular;
+	
+    float constant;
+    float linear;
+    float quadratic;
+	float _pad0;
+};
+
+Buffer* pPointLightsBuffer = NULL;
+Buffer* pDirLightsBuffer = NULL;
+
+DirectionalLight	directionalLights[gDirectionalLights];
+PointLight			pointLights[gPointLights];
 
 struct LightBuffer
 {
 	int numDirectionalLights;
-	float3 viewPos;
+	int numPointLights;
+	alignas(16) float3 viewPos;
 } lightData;
 
+Buffer* pLightBuffer = NULL;
 
 struct Vertex
 {
@@ -235,6 +257,19 @@ public:
 		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
 		bufferDesc.pData = NULL;
 		bufferDesc.ppBuffer = &pDirLightsBuffer;
+		addResource(&bufferDesc);
+
+		// PointLights Structured Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
+		bufferDesc.mDesc.mFirstElement = 0;
+		bufferDesc.mDesc.mElementCount = gPointLights;
+		bufferDesc.mDesc.mStructStride = sizeof(PointLight);
+		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
+		bufferDesc.pData = NULL;
+		bufferDesc.ppBuffer = &pPointLightsBuffer;
 		addResource(&bufferDesc);
 
 		// Rasterizer State
@@ -419,12 +454,23 @@ public:
 				mat4::rotationY((i) % 3 * currentTime);
 		}
 
-		lightData.numDirectionalLights = 1;
-		directionalLights[0].direction = float3{ 0.0f, -1.0f, 1.0f };
-		directionalLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
+
+		directionalLights[0].direction = float3{ 0.0f, -1.0f, 0.0f };
+		directionalLights[0].ambient = float3{ 0.05f, 0.05f, 0.05f };
 		directionalLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
-		directionalLights[0].specular = float3{ 0.3f, 0.3f, 0.3f };
-		lightData.numDirectionalLights = gDirectionalLights;
+		directionalLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
+		lightData.numDirectionalLights = 1;
+		
+		pointLights[0].position = float3{ 0.0f, 4.0f, 0.0f };
+		pointLights[0].ambient = float3{ 0.2f, 0.2f, 0.2f };
+		pointLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
+		pointLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
+		pointLights[0].constant = 1.0f;
+		pointLights[0].linear = 0.7f;
+		pointLights[0].quadratic = 1.8f;
+		pointLights[0]._pad0 = 1.0f;
+		lightData.numPointLights = gPointLights;
+
 		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
 
 		viewMat.setTranslation(vec3(0));
@@ -442,18 +488,21 @@ public:
 		getFenceStatus(pRenderer, pRenderCompleteFence, &fenceStatus);
 		if (fenceStatus == FENCE_STATUS_INCOMPLETE)
 			waitForFences(pRenderer, 1, &pRenderCompleteFence);
+		
+		PointLight li = {};
+		BufferUpdateDesc pointLightBuffUpdate = { pPointLightsBuffer, &li };
+		updateResource(&pointLightBuffUpdate, true);
 
 		// Update uniform buffers
 		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &uniformData };
 		updateResource(&viewProjCbv);
 
 		// Update light uniform buffers
-		BufferUpdateDesc lightCbv = { pLightBuffer, &lightData };
-		updateResource(&lightCbv);
+		BufferUpdateDesc lightBuffUpdate = { pLightBuffer, &lightData };
+		updateResource(&lightBuffUpdate);
 
-		// Update light uniform buffers
-		BufferUpdateDesc dirLights = { pDirLightsBuffer, &directionalLights };
-		updateResource(&dirLights);
+		BufferUpdateDesc dirLightBuffUpdate = { pDirLightsBuffer, &directionalLights };
+		updateResource(&dirLightBuffUpdate, true);
 
 		// Load Actions
 		LoadActionsDesc loadActions = {};
@@ -480,7 +529,7 @@ public:
 			cmdSetViewport(cmd, 0.0f, 0.0f, (float)pRenderTarget->mDesc.mWidth, (float)pRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
 			cmdSetScissor(cmd, 0, 0, pRenderTarget->mDesc.mWidth, pRenderTarget->mDesc.mHeight);
 
-			DescriptorData params[5] = {};
+			DescriptorData params[6] = {};
 			params[0].pName = "Texture";
 			params[0].ppTextures = &pCubeTexture;
 			params[1].pName = "UniformData";
@@ -491,10 +540,12 @@ public:
 			params[3].ppTextures = &pCubeSpecularTexture;
 			params[4].pName = "DirectionalLights";
 			params[4].ppBuffers = &pDirLightsBuffer;
+			params[5].pName = "PointLights";
+			params[5].ppBuffers = &pPointLightsBuffer;
 
 			cmdBindPipeline(cmd, pCubePipeline);
 			{
-				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 5, params);
+				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 6, params);
 				cmdBindVertexBuffer(cmd, 1, &pCubeVertexBuffer, NULL);
 				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
 			}
