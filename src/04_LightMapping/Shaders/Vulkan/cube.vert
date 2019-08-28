@@ -1,6 +1,6 @@
 #version 450 core
 
-#define MAX_INSTANCES 128
+#define MAX_INSTANCES 8
 
 layout(location = 0) in vec4 Position;
 layout(location = 1) in vec4 Normal;
@@ -14,9 +14,13 @@ layout(set = 0, binding = 0) uniform UniformData
 };
 
 layout(location = 0) out vec2 outTexCoords;
+layout(location = 1) out vec4 outNormal;
+layout(location = 2) out vec4 outFragPos;
 
 void main()
 {
-	gl_Position = proj * view * world[gl_InstanceIndex] * Position;
+	outFragPos = world[gl_InstanceIndex] * Position;
+	gl_Position = proj * view * outFragPos;
 	outTexCoords = TexCoords;
+	outNormal = transpose(inverse(world[gl_InstanceIndex])) * Normal;
 }

@@ -497,12 +497,10 @@ public:
 		updateResource(&lightBuffUpdate);
 		
 		BufferUpdateDesc pointLightBuffUpdate = { pPointLightsBuffer, &pointLights };
-		pointLightBuffUpdate.mDstOffset = 0;
 		updateResource(&pointLightBuffUpdate);
 
-		//BufferUpdateDesc dirLightBuffUpdate = { pDirLightsBuffer, &directionalLights };
-		//dirLightBuffUpdate.mDstOffset = 48;
-		//updateResource(&dirLightBuffUpdate);
+		BufferUpdateDesc dirLightBuffUpdate = { pDirLightsBuffer, &directionalLights };
+		updateResource(&dirLightBuffUpdate);
 
 		// Load Actions
 		LoadActionsDesc loadActions = {};
