@@ -100,16 +100,40 @@ struct PointLight
 #endif
 };
 
-Buffer* pPointLightsBuffer = NULL;
+struct SpotLight 
+{
+#ifdef VULKAN
+	alignas(16) float3 position;
+	alignas(16) float3 direction;
+	alignas(16) float2 cutOffs;
+	alignas(16) float3 ambient;
+	alignas(16) float3 diffuse;
+	alignas(16) float3 specular;
+    alignas(16) float3 attenuationParams;
+#elif DIRECT3D12
+	float3 position;
+	float3 direction;
+	float2 cutOffs;
+	float3 ambient;
+	float3 diffuse;
+	float3 specular;
+    float3 attenuationParams;
+#endif
+};
+
 Buffer* pDirLightsBuffer = NULL;
+Buffer* pPointLightsBuffer = NULL;
+Buffer* pSpotLightsBuffer = NULL;
 
 DirectionalLight	directionalLights[gDirectionalLights];
 PointLight			pointLights[gPointLights];
+SpotLight			spotLights[gSpotLights];
 
 struct LightBuffer
 {
 	int numDirectionalLights;
 	int numPointLights;
+	int numSpotLights;
 	alignas(16) float3 viewPos;
 } lightData;
 
@@ -140,10 +164,10 @@ const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
 
-class PhongShading : public IApp
+class LightMapping : public IApp
 {
 public:
-	PhongShading()
+	LightMapping()
 	{
 	}
 
@@ -283,6 +307,19 @@ public:
 		bufferDesc.pData = NULL;
 		bufferDesc.ppBuffer = &pPointLightsBuffer;
 		addResource(&bufferDesc);
+		
+		// SpotLights Structured Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
+		bufferDesc.mDesc.mFirstElement = 0;
+		bufferDesc.mDesc.mElementCount = gSpotLights;
+		bufferDesc.mDesc.mStructStride = sizeof(SpotLight);
+		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
+		bufferDesc.pData = NULL;
+		bufferDesc.ppBuffer = &pSpotLightsBuffer;
+		addResource(&bufferDesc);
 
 		// Rasterizer State
 		RasterizerStateDesc rasterizerStateDesc = {};
@@ -348,6 +385,7 @@ public:
 		removeResource(pLightBuffer);
 		removeResource(pPointLightsBuffer);
 		removeResource(pDirLightsBuffer);
+		removeResource(pSpotLightsBuffer);
 
 		removeResource(pCubeVertexBuffer);
 		removeResource(pCubeTexture);
@@ -472,13 +510,23 @@ public:
 		directionalLights[0].ambient = float3{ 0.05f, 0.05f, 0.05f };
 		directionalLights[0].diffuse = float3{ 0.5f, 0.5f, 0.5f };
 		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };
+		lightData.numDirectionalLights = 0;
+
 		pointLights[0].position = float3{ -4.0f, 4.0f, 5.0f };
 		pointLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
 		pointLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
 		pointLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
 		pointLights[0].attenuationParams = float3{1.0f, 0.07f, 0.017f};
-		lightData.numDirectionalLights = gDirectionalLights;
-		lightData.numPointLights = gPointLights;
+		lightData.numPointLights = 0;
+
+		spotLights[0].position = float3{ 4.0f * sin(currentTime), 0.0f, 0.0f };
+		spotLights[0].direction = float3{ 0.0f, 0.0f, 1.0f };
+		spotLights[0].cutOffs = float2{ cos(PI / 9), cos(PI / 6) };
+		spotLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
+		spotLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
+		spotLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
+		spotLights[0].attenuationParams = float3{1.0f, 0.07f, 0.017f};
+		lightData.numSpotLights = gSpotLights;
 
 		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
 
@@ -509,8 +557,11 @@ public:
 		BufferUpdateDesc pointLightBuffUpdate = { pPointLightsBuffer, &pointLights };
 		updateResource(&pointLightBuffUpdate);
 
-		BufferUpdateDesc dirLightBuffUpdate = { pDirLightsBuffer, &directionalLights, 0, 0, sizeof(DirectionalLight) };
+		BufferUpdateDesc dirLightBuffUpdate = { pDirLightsBuffer, &directionalLights };
 		updateResource(&dirLightBuffUpdate);
+
+		BufferUpdateDesc spotLightBuffUpdate = { pSpotLightsBuffer, &spotLights };
+		updateResource(&spotLightBuffUpdate);
 
 		// Load Actions
 		LoadActionsDesc loadActions = {};
@@ -537,23 +588,25 @@ public:
 			cmdSetViewport(cmd, 0.0f, 0.0f, (float)pRenderTarget->mDesc.mWidth, (float)pRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
 			cmdSetScissor(cmd, 0, 0, pRenderTarget->mDesc.mWidth, pRenderTarget->mDesc.mHeight);
 
-			DescriptorData params[6] = {};
+			DescriptorData params[7] = {};
 			params[0].pName = "Texture";
 			params[0].ppTextures = &pCubeTexture;
-			params[1].pName = "UniformData";
-			params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
-			params[2].pName = "LightData";
-			params[2].ppBuffers = &pLightBuffer;
-			params[3].pName = "TextureSpecular";
-			params[3].ppTextures = &pCubeSpecularTexture;
+			params[1].pName = "TextureSpecular";
+			params[1].ppTextures = &pCubeSpecularTexture;
+			params[2].pName = "UniformData";
+			params[2].ppBuffers = &pUniformBuffers[gFrameIndex];
+			params[3].pName = "LightData";
+			params[3].ppBuffers = &pLightBuffer;
 			params[4].pName = "DirectionalLights";
 			params[4].ppBuffers = &pDirLightsBuffer;
 			params[5].pName = "PointLights";
 			params[5].ppBuffers = &pPointLightsBuffer;
+			params[6].pName = "SpotLights";
+			params[6].ppBuffers = &pSpotLightsBuffer;
 
 			cmdBindPipeline(cmd, pCubePipeline);
 			{
-				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 6, params);
+				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 7, params);
 				cmdBindVertexBuffer(cmd, 1, &pCubeVertexBuffer, NULL);
 				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
 			}
@@ -709,4 +762,4 @@ public:
 	}
 };
 
-DEFINE_APPLICATION_MAIN(PhongShading)
+DEFINE_APPLICATION_MAIN(LightMapping)
