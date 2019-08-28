@@ -51,13 +51,6 @@ float4 main(VSOutput input) : SV_TARGET
 	
 	float3 result;
 
-	if(PointLights[0].position.y == -1.0f)
-	{
-		return float4(1,1,0,1);
-	}
-	
-    return float4(0, 1, 0, 1.0f);
-
 	for(int i = 0; i < numDirectionalLights; ++i)
 		result += calculateDirectionalLight(DirectionalLights[i], normal, viewDir, input.TexCoord);
 	for(int i = 0; i < numPointLights; ++i)
@@ -95,7 +88,9 @@ float3 calculatePointLight(PointLight pointLight, float3 normal, float3 viewDir,
 
 	// Calc Attenuation
 	float distance = length(difference);
-	float attenuation = 1.0f / (pointLight.att_constant + pointLight.att_linear * distance + pointLight.att_quadratic * pow(distance,2));
+	float3 dis = float3(1, distance, pow(distance, 2));
+	float3 att = float3(pointLight.att_constant, pointLight.att_linear, pointLight.att_quadratic);
+	float attenuation = 1.0f / dot(dis, att);
 
 	// Ambient
     float3 ambient = pointLight.ambient;
@@ -108,6 +103,6 @@ float3 calculatePointLight(PointLight pointLight, float3 normal, float3 viewDir,
 	float spec = pow(max(dot(reflectDir, viewDir), 0.0), 64);
 	float3 specular = spec * pointLight.specular;  
 
-	return ((ambient + diffuse) * Texture.Sample(uSampler0, TexCoord).xyz +
+	return attenuation * ((ambient + diffuse) * Texture.Sample(uSampler0, TexCoord).xyz +
 			(specular) * TextureSpecular.Sample(uSampler0, TexCoord).xyz);
 }
