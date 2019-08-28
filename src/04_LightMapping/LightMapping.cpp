@@ -245,48 +245,30 @@ public:
 		bufferDesc.pData = NULL;
 		bufferDesc.ppBuffer = &pLightBuffer;
 		addResource(&bufferDesc);
-		
-
-		directionalLights[0].direction = float3{ 0.0f, -1.0f, -1.0f };
-		directionalLights[0].ambient = float3{ 0.05f, 0.05f, 0.05f };
-		directionalLights[0].diffuse = float3{ 0.5f, 0.5f, 0.5f };
-		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };		
-		pointLights[0].position = float3{ -4.0f, 1.0f, 5.0f };
-		pointLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
-		pointLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
-		pointLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
-		pointLights[0].constant = 1.0f;
-		pointLights[0].linear = 0.07f;
-		pointLights[0].quadratic = 0.017f;
-		pointLights[0]._pad0 = 1.0f;
-
-		lightData.numDirectionalLights = 1;
-		lightData.numPointLights = gPointLights;
-
 
 		// DirLights Structured Buffer
 		bufferDesc = {};
 		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
-		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
 		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
 		bufferDesc.mDesc.mFirstElement = 0;
 		bufferDesc.mDesc.mElementCount = gDirectionalLights;
 		bufferDesc.mDesc.mStructStride = sizeof(DirectionalLight);
 		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
-		bufferDesc.pData = &directionalLights;
+		bufferDesc.pData = NULL;
 		bufferDesc.ppBuffer = &pDirLightsBuffer;
 		addResource(&bufferDesc);
 
 		// PointLights Structured Buffer
 		bufferDesc = {};
 		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
-		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
 		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
 		bufferDesc.mDesc.mFirstElement = 0;
 		bufferDesc.mDesc.mElementCount = gPointLights;
 		bufferDesc.mDesc.mStructStride = sizeof(PointLight);
 		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
-		bufferDesc.pData = &pointLights;
+		bufferDesc.pData = NULL;
 		bufferDesc.ppBuffer = &pPointLightsBuffer;
 		addResource(&bufferDesc);
 
@@ -467,10 +449,26 @@ public:
 		// Update Instance Data
 		for (uint32_t i = 0; i < gInstanceCount; ++i)
 		{
-			uniformData.pToWorld[i] = mat4::translation(Vector3(-4.0f + 2.0f * i, -1, 5)); /* *
+			uniformData.pToWorld[i] = mat4::translation(Vector3(-4.0f + 2.0f * i, -1, 5)) *
 				mat4::rotationX(i % 2 * currentTime) *
-				mat4::rotationY((i) % 3 * currentTime);*/
+				mat4::rotationY((i) % 3 * currentTime);
 		}
+
+
+		directionalLights[0].direction = float3{ 0.0f, -1.0f, -1.0f };
+		directionalLights[0].ambient = float3{ 0.05f, 0.05f, 0.05f };
+		directionalLights[0].diffuse = float3{ 0.5f, 0.5f, 0.5f };
+		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };		
+		pointLights[0].position = float3{ -4.0f, 4.0f, 5.0f };
+		pointLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
+		pointLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
+		pointLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
+		pointLights[0].constant = 1.0f;
+		pointLights[0].linear = 0.07f;
+		pointLights[0].quadratic = 0.017f;
+		pointLights[0]._pad0 = 1.0f;
+		lightData.numDirectionalLights = gDirectionalLights;
+		lightData.numPointLights = gPointLights;
 
 		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
 
@@ -497,6 +495,14 @@ public:
 		// Update light uniform buffers
 		BufferUpdateDesc lightBuffUpdate = { pLightBuffer, &lightData };
 		updateResource(&lightBuffUpdate);
+		
+		BufferUpdateDesc pointLightBuffUpdate = { pPointLightsBuffer, &pointLights };
+		pointLightBuffUpdate.mDstOffset = 0;
+		updateResource(&pointLightBuffUpdate);
+
+		//BufferUpdateDesc dirLightBuffUpdate = { pDirLightsBuffer, &directionalLights };
+		//dirLightBuffUpdate.mDstOffset = 48;
+		//updateResource(&dirLightBuffUpdate);
 
 		// Load Actions
 		LoadActionsDesc loadActions = {};
