@@ -15,6 +15,8 @@
   - [ ] Profiling and UI
   - [ ] **Deferred Lighting**
   - [ ] [Ambient Occlusion](https://github.com/Erfan-Ahmadi/AmbientOcclusion)
+  - [ ] Gamma Correction
+  - [ ] Tone Mapping / HDR
 ### Build
   - [x] Visual Studio 2017:
     * Put Repository folder next to cloned [The-Forge API](https://github.com/ConfettiFX/The-Forge) repository folder
