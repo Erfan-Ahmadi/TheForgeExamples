@@ -86,6 +86,7 @@ vec3 calculateDirectionalLight(DirectionalLight dirLight, vec3 normal, vec3 view
 {
 	vec3 lightDir = normalize(-dirLight.direction);
 	vec3 reflectDir = reflect(-lightDir, normal);
+	vec3 halfwayDir = normalize(lightDir + viewDir);
 
 	// Ambient
     vec3 ambient = dirLight.ambient;
@@ -95,7 +96,7 @@ vec3 calculateDirectionalLight(DirectionalLight dirLight, vec3 normal, vec3 view
 	vec3 diffuse = diff * dirLight.diffuse;
 
 	// Specular
-	float spec = pow(max(dot(reflectDir, viewDir), 0.0), 32);
+	float spec = pow(max(dot(halfwayDir, normal), 0.0), 16);
 	vec3 specular = spec * dirLight.specular;  
 
 	return (ambient + diffuse) * texture(sampler2D(Texture, uSampler0), TexCoords).xyz +
@@ -108,6 +109,7 @@ vec3 calculatePointLight(PointLight pointLight, vec3 normal, vec3 viewDir)
 
 	vec3 lightDir = normalize(difference);
 	vec3 reflectDir = reflect(-lightDir, normal);
+	vec3 halfwayDir = normalize(lightDir + viewDir);
 
 	// Calc Attenuation
 	float distance = length(difference);
@@ -122,7 +124,7 @@ vec3 calculatePointLight(PointLight pointLight, vec3 normal, vec3 viewDir)
 	vec3 diffuse = diff * pointLight.diffuse;
 
 	// Specular
-	float spec = pow(max(dot(reflectDir, viewDir), 0.0), 64);
+	float spec = pow(max(dot(halfwayDir, normal), 0.0), 64);
 	vec3 specular = spec * pointLight.specular;  
 
 	return attenuation * ((ambient + diffuse) * texture(sampler2D(Texture, uSampler0), TexCoords).xyz +
@@ -134,6 +136,7 @@ vec3 calculateSpotLight(SpotLight spotLight, vec3 normal, vec3 viewDir)
 	vec3 difference = spotLight.position - FragPos.xyz;
 	vec3 lightDir = normalize(difference);
 	vec3 reflectDir = reflect(-lightDir, normal);
+	vec3 halfwayDir = normalize(lightDir + viewDir);
 	
 	float theta = dot(normalize(-spotLight.direction), lightDir);
 	float epsilon = spotLight.cutOff.x - spotLight.cutOff.y;
@@ -152,7 +155,7 @@ vec3 calculateSpotLight(SpotLight spotLight, vec3 normal, vec3 viewDir)
 	vec3 diffuse = diff * spotLight.diffuse * intensity;
 
 	// Specular
-	float spec = pow(max(dot(reflectDir, viewDir), 0.0), 64);
+	float spec = pow(max(dot(halfwayDir, normal), 0.0), 64);
 	vec3 specular = spec * spotLight.specular * intensity;  
 
 	return attenuation * ((ambient + diffuse) * texture(sampler2D(Texture, uSampler0), TexCoords).xyz +
