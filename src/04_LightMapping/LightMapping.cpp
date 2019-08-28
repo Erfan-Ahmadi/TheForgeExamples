@@ -69,23 +69,35 @@ struct UniformBuffer
 
 struct DirectionalLight 
 {
+#ifdef VULKAN
+	alignas(16) float3 direction;
+	alignas(16) float3 ambient;
+	alignas(16) float3 diffuse;
+	alignas(16) float3 specular;
+#elif DIRECT3D12
 	float3 direction;
 	float3 ambient;
 	float3 diffuse;
 	float3 specular;
+#endif
 };
 
 struct PointLight 
 {
+#ifdef VULKAN
+	alignas(16) float3 position;
+	alignas(16) float3 ambient;
+	alignas(16) float3 diffuse;
+	alignas(16) float3 specular;
+    alignas(16) float3 attenuationParams;
+#elif DIRECT3D12
 	float3 position;
 	float3 ambient;
 	float3 diffuse;
 	float3 specular;
-	
-    float constant;
-    float linear;
-    float quadratic;
+    float3 attenuationParams;
 	float _pad0;
+#endif
 };
 
 Buffer* pPointLightsBuffer = NULL;
@@ -334,6 +346,8 @@ public:
 		}
 
 		removeResource(pLightBuffer);
+		removeResource(pPointLightsBuffer);
+		removeResource(pDirLightsBuffer);
 
 		removeResource(pCubeVertexBuffer);
 		removeResource(pCubeTexture);
@@ -454,19 +468,15 @@ public:
 				mat4::rotationY((i) % 3 * currentTime);
 		}
 
-
-		directionalLights[0].direction = float3{ 0.0f, -1.0f, -1.0f };
+		directionalLights[0].direction = float3{0.0f, -1.0f, 0.0f };
 		directionalLights[0].ambient = float3{ 0.05f, 0.05f, 0.05f };
 		directionalLights[0].diffuse = float3{ 0.5f, 0.5f, 0.5f };
-		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };		
+		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };
 		pointLights[0].position = float3{ -4.0f, 4.0f, 5.0f };
 		pointLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
 		pointLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
 		pointLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
-		pointLights[0].constant = 1.0f;
-		pointLights[0].linear = 0.07f;
-		pointLights[0].quadratic = 0.017f;
-		pointLights[0]._pad0 = 1.0f;
+		pointLights[0].attenuationParams = float3{1.0f, 0.07f, 0.017f};
 		lightData.numDirectionalLights = gDirectionalLights;
 		lightData.numPointLights = gPointLights;
 
@@ -499,7 +509,7 @@ public:
 		BufferUpdateDesc pointLightBuffUpdate = { pPointLightsBuffer, &pointLights };
 		updateResource(&pointLightBuffUpdate);
 
-		BufferUpdateDesc dirLightBuffUpdate = { pDirLightsBuffer, &directionalLights };
+		BufferUpdateDesc dirLightBuffUpdate = { pDirLightsBuffer, &directionalLights, 0, 0, sizeof(DirectionalLight) };
 		updateResource(&dirLightBuffUpdate);
 
 		// Load Actions

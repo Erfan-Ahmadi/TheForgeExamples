@@ -51,18 +51,6 @@ float4 main(VSOutput input) : SV_TARGET
 	
 	float3 result;
 	
-	if(PointLights[0].position.y == 0.0f)
-	{
-		return float4(1,1,0,1);
-	}
-	
-	if(DirectionalLights[0].direction.y == 0.0f)
-	{
-		return float4(0,1,1,1);
-	}
-
-    return float4(0, 1, 0, 1.0f);
-
 	for(int i = 0; i < numDirectionalLights; ++i)
 		result += calculateDirectionalLight(DirectionalLights[i], normal, viewDir, input.TexCoord);
 	for(int i = 0; i < numPointLights; ++i)
