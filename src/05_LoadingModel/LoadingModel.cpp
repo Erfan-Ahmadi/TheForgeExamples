@@ -355,6 +355,14 @@ public:
 		removeResource(pTexture);
 		removeResource(pSpecularTexture);
 
+		for(size_t i = 0; i < sceneData.meshes.size(); ++i)
+		{
+			removeResource(sceneData.meshes[i]->pPositionStream);
+			removeResource(sceneData.meshes[i]->pUVStream);
+			removeResource(sceneData.meshes[i]->pNormalStream);
+			removeResource(sceneData.meshes[i]->pIndicesStream);
+		}
+
 		removeDescriptorBinder(pRenderer, pDescriptorBinder);
 
 		removeSampler(pRenderer, pSampler);
@@ -706,7 +714,7 @@ public:
 
 		AssimpImporter importer;
 
-		if (!importer.ImportModel("../../../../src/04_LightMapping/Meshes/lion.obj", &gModel))
+		if (!importer.ImportModel("../../../../src/05_LoadingModel/Meshes/lion.obj", &gModel))
 		{
 			return false;
 		}
