@@ -1,5 +1,12 @@
 #include "../common.h"
-#include "Common_3/ThirdParty/OpenSource/Nothings/stb_image.h"
+
+//EASTL includes
+#include "Common_3/ThirdParty/OpenSource/EASTL/vector.h"
+#include "Common_3/ThirdParty/OpenSource/EASTL/string.h"
+
+//asimp importer
+#include "Common_3/Tools/AssimpImporter/AssimpImporter.h"
+#include "Common_3/OS/Interfaces/IMemory.h"
 
 constexpr size_t gInstanceCount = 5;
 constexpr size_t gMaxInstanceCount = 8;
@@ -20,7 +27,7 @@ static_assert(gSpotLights <= gMaxSpotLights, "");
 const uint32_t	gImageCount = 3;
 bool			bToggleMicroProfiler = false;
 bool			bPrevToggleMicroProfiler = false;
-uint32_t		gNumCubePoints;
+uint32_t		gNumModelPoints;
 
 Renderer* pRenderer = NULL;
 
@@ -41,12 +48,12 @@ SwapChain* pSwapChain = NULL;
 Pipeline* pGraphicsPipeline = NULL;
 RootSignature* pRootSignature = NULL;
 
-Shader* pCubeShader = NULL;
-Texture* pCubeTexture = NULL;
-Texture* pCubeSpecularTexture = NULL;
-Buffer* pCubeVertexBuffer = NULL;
-Pipeline* pCubePipeline = NULL;
-Pipeline* pCubePipeline2 = NULL;
+Shader* pModelShader = NULL;
+Texture* pTexture = NULL;
+Texture* pSpecularTexture = NULL;
+Buffer* pModelVertexBuffer = NULL;
+Pipeline* pModelPipeline = NULL;
+Pipeline* pModelPipeline2 = NULL;
 
 uint32_t			gFrameIndex = 0;
 
@@ -60,6 +67,19 @@ GuiComponent* pGui = NULL;
 
 Buffer* pUniformBuffers[gImageCount] = { NULL };
 
+struct MeshBatch
+{
+	Buffer* pPositionStream;
+	Buffer* pNormalStream;
+	Buffer* pUVStream;
+	Buffer* pIndicesStream;
+};
+
+struct SceneData
+{
+	eastl::vector<MeshBatch*> meshes;
+} sceneData;
+
 struct UniformBuffer
 {
 	mat4	view;
@@ -67,7 +87,7 @@ struct UniformBuffer
 	mat4	pToWorld[gMaxInstanceCount];
 } uniformData;
 
-struct DirectionalLight 
+struct DirectionalLight
 {
 #ifdef VULKAN
 	alignas(16) float3 direction;
@@ -82,25 +102,25 @@ struct DirectionalLight
 #endif
 };
 
-struct PointLight 
+struct PointLight
 {
 #ifdef VULKAN
 	alignas(16) float3 position;
 	alignas(16) float3 ambient;
 	alignas(16) float3 diffuse;
 	alignas(16) float3 specular;
-    alignas(16) float3 attenuationParams;
+	alignas(16) float3 attenuationParams;
 #elif DIRECT3D12
 	float3 position;
 	float3 ambient;
 	float3 diffuse;
 	float3 specular;
-    float3 attenuationParams;
+	float3 attenuationParams;
 	float _pad0;
 #endif
 };
 
-struct SpotLight 
+struct SpotLight
 {
 #ifdef VULKAN
 	alignas(16) float3 position;
@@ -109,7 +129,7 @@ struct SpotLight
 	alignas(16) float3 ambient;
 	alignas(16) float3 diffuse;
 	alignas(16) float3 specular;
-    alignas(16) float3 attenuationParams;
+	alignas(16) float3 attenuationParams;
 #elif DIRECT3D12
 	float3 position;
 	float3 direction;
@@ -117,7 +137,7 @@ struct SpotLight
 	float3 ambient;
 	float3 diffuse;
 	float3 specular;
-    float3 attenuationParams;
+	float3 attenuationParams;
 #endif
 };
 
@@ -146,14 +166,16 @@ struct Vertex
 	float2 textCoord;
 };
 
-constexpr uint64_t cubeDataSize = 6 * 6 * sizeof(Vertex);
-
-const char* pTexturesFileNames[] = { "Skybox_front5" };
+const char* pTexturesFileNames[] =
+{
+	"lion/lion_albedo",
+	"lion/lion_specular"
+};
 
 const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_BinShaders
-	"../../../../src/04_LightMapping/",												// FSR_SrcShaders
-	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Textures
+	"../../../../src/05_LoadingModel/",												// FSR_SrcShaders
+	"../../../../src/05_LoadingModel/",												// FSR_Textures
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Meshes
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_GpuConfig
@@ -164,10 +186,12 @@ const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
 
-class LightMapping : public IApp
+AssimpImporter::Model gModel;
+
+class LoadingModel : public IApp
 {
 public:
-	LightMapping()
+	LoadingModel()
 	{
 	}
 
@@ -199,28 +223,9 @@ public:
 
 		// Shader
 		ShaderLoadDesc cubeShaderDesc = {};
-		cubeShaderDesc.mStages[0] = { "cube.vert", NULL, 0, FSR_SrcShaders };
-		cubeShaderDesc.mStages[1] = { "cube.frag", NULL, 0, FSR_SrcShaders };
-		addShader(pRenderer, &cubeShaderDesc, &pCubeShader);
-
-		// Main Texture
-		int width, height, channels;
-		uint8_t* raw_image = stbi_load("../../../../src/04_LightMapping/Textures/container2.png", &width, &height, &channels, 4);
-
-		RawImageData raw_image_data = { raw_image, ImageFormat::RGBA8, (uint32_t)width, (uint32_t)height, 1, 1, 1 };
-
-		TextureLoadDesc textureDesc = {};
-		textureDesc.mRoot = FSR_Textures;
-		textureDesc.pRawImageData = &raw_image_data;
-		textureDesc.ppTexture = &pCubeTexture;
-		addResource(&textureDesc, true);
-
-		// Specular Texture
-		raw_image = stbi_load("../../../../src/04_LightMapping/Textures/container2_specular.png", &width, &height, &channels, 4);
-		textureDesc.pRawImageData = &raw_image_data;
-		raw_image_data = { raw_image, ImageFormat::RGBA8, (uint32_t)width, (uint32_t)height, 1, 1, 1 };
-		textureDesc.ppTexture = &pCubeSpecularTexture;
-		addResource(&textureDesc, true);
+		cubeShaderDesc.mStages[0] = { "basic.vert", NULL, 0, FSR_SrcShaders };
+		cubeShaderDesc.mStages[1] = { "basic.frag", NULL, 0, FSR_SrcShaders };
+		addShader(pRenderer, &cubeShaderDesc, &pModelShader);
 
 		// Sampler
 		SamplerDesc samplerDesc = { FILTER_LINEAR,
@@ -236,7 +241,7 @@ public:
 
 		RootSignatureDesc rootDesc = {};
 		rootDesc.mShaderCount = 1;
-		rootDesc.ppShaders = &pCubeShader;
+		rootDesc.ppShaders = &pModelShader;
 		rootDesc.mStaticSamplerCount = 1;
 		rootDesc.ppStaticSamplers = &pSampler;
 		rootDesc.ppStaticSamplerNames = pStaticSamplers;
@@ -249,13 +254,13 @@ public:
 
 		// Vertex Buffer
 		Vertex* pVertices;
-		getCubeVertexData(&pVertices);
+		getModelVertexData(&pVertices);
 		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
 		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
-		bufferDesc.mDesc.mSize = cubeDataSize;
+		bufferDesc.mDesc.mSize = 6 * 6 * sizeof(Vertex);
 		bufferDesc.mDesc.mVertexStride = sizeof(Vertex);
 		bufferDesc.pData = pVertices;
-		bufferDesc.ppBuffer = &pCubeVertexBuffer;
+		bufferDesc.ppBuffer = &pModelVertexBuffer;
 		addResource(&bufferDesc);
 
 		// Uniform Buffer
@@ -272,54 +277,13 @@ public:
 			addResource(&bufferDesc);
 		}
 
-		// Light Uniform Buffer
-		bufferDesc = {};
-		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-		bufferDesc.mDesc.mSize = sizeof(LightBuffer);
-		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
-		bufferDesc.pData = NULL;
-		bufferDesc.ppBuffer = &pLightBuffer;
-		addResource(&bufferDesc);
+		CreateLightsBuffer();
 
-		// DirLights Structured Buffer
-		bufferDesc = {};
-		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
-		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
-		bufferDesc.mDesc.mFirstElement = 0;
-		bufferDesc.mDesc.mElementCount = gDirectionalLights;
-		bufferDesc.mDesc.mStructStride = sizeof(DirectionalLight);
-		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
-		bufferDesc.pData = NULL;
-		bufferDesc.ppBuffer = &pDirLightsBuffer;
-		addResource(&bufferDesc);
-
-		// PointLights Structured Buffer
-		bufferDesc = {};
-		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
-		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
-		bufferDesc.mDesc.mFirstElement = 0;
-		bufferDesc.mDesc.mElementCount = gPointLights;
-		bufferDesc.mDesc.mStructStride = sizeof(PointLight);
-		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
-		bufferDesc.pData = NULL;
-		bufferDesc.ppBuffer = &pPointLightsBuffer;
-		addResource(&bufferDesc);
-		
-		// SpotLights Structured Buffer
-		bufferDesc = {};
-		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
-		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
-		bufferDesc.mDesc.mFirstElement = 0;
-		bufferDesc.mDesc.mElementCount = gSpotLights;
-		bufferDesc.mDesc.mStructStride = sizeof(SpotLight);
-		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
-		bufferDesc.pData = NULL;
-		bufferDesc.ppBuffer = &pSpotLightsBuffer;
-		addResource(&bufferDesc);
+		if (!LoadModels())
+		{
+			finishResourceLoading();
+			return false;
+		}
 
 		// Rasterizer State
 		RasterizerStateDesc rasterizerStateDesc = {};
@@ -387,14 +351,14 @@ public:
 		removeResource(pDirLightsBuffer);
 		removeResource(pSpotLightsBuffer);
 
-		removeResource(pCubeVertexBuffer);
-		removeResource(pCubeTexture);
-		removeResource(pCubeSpecularTexture);
+		removeResource(pModelVertexBuffer);
+		removeResource(pTexture);
+		removeResource(pSpecularTexture);
 
 		removeDescriptorBinder(pRenderer, pDescriptorBinder);
 
 		removeSampler(pRenderer, pSampler);
-		removeShader(pRenderer, pCubeShader);
+		removeShader(pRenderer, pModelShader);
 		removeRootSignature(pRenderer, pRootSignature);
 
 		removeDepthState(pDepthState);
@@ -458,13 +422,13 @@ public:
 		pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
 		pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
 		pipelineSettings.pRootSignature = pRootSignature;
-		pipelineSettings.pShaderProgram = pCubeShader;
+		pipelineSettings.pShaderProgram = pModelShader;
 		pipelineSettings.pVertexLayout = &vertexLayout;
 		pipelineSettings.pRasterizerState = pRastState;
-		addPipeline(pRenderer, &desc, &pCubePipeline);
+		addPipeline(pRenderer, &desc, &pModelPipeline);
 
 		pipelineSettings.pRasterizerState = pSecondRastState;
-		addPipeline(pRenderer, &desc, &pCubePipeline2);
+		addPipeline(pRenderer, &desc, &pModelPipeline2);
 
 		return true;
 	}
@@ -475,7 +439,7 @@ public:
 
 		gAppUI.Unload();
 
-		removePipeline(pRenderer, pCubePipeline);
+		removePipeline(pRenderer, pModelPipeline);
 
 		removeSwapChain(pRenderer, pSwapChain);
 		removeRenderTarget(pRenderer, pDepthBuffer);
@@ -506,7 +470,7 @@ public:
 				mat4::rotationY((i) % 3 * currentTime);
 		}
 
-		directionalLights[0].direction = float3{0.0f, -1.0f, 0.0f };
+		directionalLights[0].direction = float3{ 0.0f, -1.0f, 0.0f };
 		directionalLights[0].ambient = float3{ 0.05f, 0.05f, 0.05f };
 		directionalLights[0].diffuse = float3{ 0.5f, 0.5f, 0.5f };
 		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };
@@ -516,16 +480,16 @@ public:
 		pointLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
 		pointLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
 		pointLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
-		pointLights[0].attenuationParams = float3{1.0f, 0.07f, 0.017f};
+		pointLights[0].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
 		lightData.numPointLights = 0;
 
-		spotLights[0].position = float3{ 4.0f  * sin(currentTime), 0.0f, 0.0f };
-		spotLights[0].direction = float3{  -0.5f, 0.0f, 1.0f };
+		spotLights[0].position = float3{ 4.0f * sin(currentTime), 0.0f, 0.0f };
+		spotLights[0].direction = float3{ -0.5f, 0.0f, 1.0f };
 		spotLights[0].cutOffs = float2{ cos(PI / 9), cos(PI / 6) };
 		spotLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
 		spotLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
 		spotLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
-		spotLights[0].attenuationParams = float3{1.0f, 0.07f, 0.017f};
+		spotLights[0].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
 		lightData.numSpotLights = gSpotLights;
 
 		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
@@ -545,7 +509,7 @@ public:
 		getFenceStatus(pRenderer, pRenderCompleteFence, &fenceStatus);
 		if (fenceStatus == FENCE_STATUS_INCOMPLETE)
 			waitForFences(pRenderer, 1, &pRenderCompleteFence);
-		
+
 		// Update uniform buffers
 		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &uniformData };
 		updateResource(&viewProjCbv);
@@ -553,7 +517,7 @@ public:
 		// Update light uniform buffers
 		BufferUpdateDesc lightBuffUpdate = { pLightBuffer, &lightData };
 		updateResource(&lightBuffUpdate);
-		
+
 		BufferUpdateDesc pointLightBuffUpdate = { pPointLightsBuffer, &pointLights };
 		updateResource(&pointLightBuffUpdate);
 
@@ -590,9 +554,9 @@ public:
 
 			DescriptorData params[7] = {};
 			params[0].pName = "Texture";
-			params[0].ppTextures = &pCubeTexture;
+			params[0].ppTextures = &pTexture;
 			params[1].pName = "TextureSpecular";
-			params[1].ppTextures = &pCubeSpecularTexture;
+			params[1].ppTextures = &pSpecularTexture;
 			params[2].pName = "UniformData";
 			params[2].ppBuffers = &pUniformBuffers[gFrameIndex];
 			params[3].pName = "LightData";
@@ -604,10 +568,10 @@ public:
 			params[6].pName = "SpotLights";
 			params[6].ppBuffers = &pSpotLightsBuffer;
 
-			cmdBindPipeline(cmd, pCubePipeline);
+			cmdBindPipeline(cmd, pModelPipeline);
 			{
 				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 7, params);
-				cmdBindVertexBuffer(cmd, 1, &pCubeVertexBuffer, NULL);
+				cmdBindVertexBuffer(cmd, 1, &pModelVertexBuffer, NULL);
 				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
 			}
 
@@ -654,7 +618,7 @@ public:
 		return pDepthBuffer != NULL;
 	}
 
-	const char* GetName() { return "04_LightMapping"; }
+	const char* GetName() { return "05_LoadingModel"; }
 
 	void RecenterCameraView(float maxDistance, vec3 lookAt = vec3(0))
 	{
@@ -672,13 +636,134 @@ public:
 		pCameraController->lookAt(lookAt);
 	}
 
+	void CreateLightsBuffer()
+	{
+		BufferLoadDesc bufferDesc = {};
+
+		// Light Uniform Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mSize = sizeof(LightBuffer);
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+		bufferDesc.pData = NULL;
+		bufferDesc.ppBuffer = &pLightBuffer;
+		addResource(&bufferDesc);
+
+		// DirLights Structured Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
+		bufferDesc.mDesc.mFirstElement = 0;
+		bufferDesc.mDesc.mElementCount = gDirectionalLights;
+		bufferDesc.mDesc.mStructStride = sizeof(DirectionalLight);
+		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
+		bufferDesc.pData = NULL;
+		bufferDesc.ppBuffer = &pDirLightsBuffer;
+		addResource(&bufferDesc);
+
+		// PointLights Structured Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
+		bufferDesc.mDesc.mFirstElement = 0;
+		bufferDesc.mDesc.mElementCount = gPointLights;
+		bufferDesc.mDesc.mStructStride = sizeof(PointLight);
+		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
+		bufferDesc.pData = NULL;
+		bufferDesc.ppBuffer = &pPointLightsBuffer;
+		addResource(&bufferDesc);
+
+		// SpotLights Structured Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
+		bufferDesc.mDesc.mFirstElement = 0;
+		bufferDesc.mDesc.mElementCount = gSpotLights;
+		bufferDesc.mDesc.mStructStride = sizeof(SpotLight);
+		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
+		bufferDesc.pData = NULL;
+		bufferDesc.ppBuffer = &pSpotLightsBuffer;
+		addResource(&bufferDesc);
+	}
+
+	bool LoadModels()
+	{
+		// Main Texture
+		TextureLoadDesc textureDesc = {};
+		textureDesc.mRoot = FSR_Textures;
+		textureDesc.pFilename = pTexturesFileNames[0];
+		textureDesc.ppTexture = &pTexture;
+		addResource(&textureDesc, true);
+
+		// Specular Texture
+		textureDesc.pFilename = pTexturesFileNames[1];
+		textureDesc.ppTexture = &pSpecularTexture;
+		addResource(&textureDesc, true);
+
+		AssimpImporter importer;
+
+		if (!importer.ImportModel("../../../../src/04_LightMapping/Meshes/lion.obj", &gModel))
+		{
+			return false;
+		}
+
+		size_t meshSize = gModel.mMeshArray.size();
+
+		for (size_t i = 0; i < meshSize; ++i)
+		{
+			AssimpImporter::Mesh subMesh = gModel.mMeshArray[i];
+
+			MeshBatch* pMeshBatch = (MeshBatch*)conf_placement_new<MeshBatch>(conf_calloc(1, sizeof(MeshBatch)));
+
+			sceneData.meshes.push_back(pMeshBatch);
+
+			// Vertex Buffer
+			BufferLoadDesc bufferDesc = {};
+			bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
+			bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+			bufferDesc.mDesc.mVertexStride = sizeof(float3);
+			bufferDesc.mDesc.mSize = bufferDesc.mDesc.mVertexStride * subMesh.mPositions.size();
+			bufferDesc.pData = subMesh.mPositions.data();
+			bufferDesc.ppBuffer = &pMeshBatch->pPositionStream;
+			addResource(&bufferDesc);
+			
+			bufferDesc.mDesc.mVertexStride = sizeof(float3);
+			bufferDesc.mDesc.mSize = subMesh.mNormals.size() * bufferDesc.mDesc.mVertexStride;
+			bufferDesc.pData = subMesh.mNormals.data();
+			bufferDesc.ppBuffer = &pMeshBatch->pNormalStream;
+			addResource(&bufferDesc);
+
+			bufferDesc.mDesc.mVertexStride = sizeof(float2);
+			bufferDesc.mDesc.mSize = subMesh.mUvs.size() * bufferDesc.mDesc.mVertexStride;
+			bufferDesc.pData = subMesh.mUvs.data();
+			bufferDesc.ppBuffer = &pMeshBatch->pUVStream;
+			addResource(&bufferDesc);
+
+			// Index buffer
+			bufferDesc = {};
+			bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_INDEX_BUFFER;
+			bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+			bufferDesc.mDesc.mIndexType = INDEX_TYPE_UINT32;
+			bufferDesc.mDesc.mSize = sizeof(uint) * (uint)subMesh.mIndices.size();
+			bufferDesc.pData = subMesh.mIndices.data();
+			bufferDesc.ppBuffer = &pMeshBatch->pIndicesStream;
+			addResource(&bufferDesc);
+		}
+
+		return true;
+	}
+
 	static bool cameraInputEvent(const ButtonData* data)
 	{
 		pCameraController->onInputEvent(data);
 		return true;
 	}
 
-	static void getCubeVertexData(Vertex** vertexData)
+	static void getModelVertexData(Vertex** vertexData)
 	{
 		Vertex* pVertices = (Vertex*)conf_malloc(sizeof(Vertex) * 6 * 6);
 
@@ -762,4 +847,4 @@ public:
 	}
 };
 
-DEFINE_APPLICATION_MAIN(LightMapping)
+DEFINE_APPLICATION_MAIN(LoadingModel)
