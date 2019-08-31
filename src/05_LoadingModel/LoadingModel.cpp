@@ -8,10 +8,6 @@
 #include "Common_3/Tools/AssimpImporter/AssimpImporter.h"
 #include "Common_3/OS/Interfaces/IMemory.h"
 
-constexpr size_t gInstanceCount = 5;
-constexpr size_t gMaxInstanceCount = 8;
-static_assert(gInstanceCount <= gMaxInstanceCount, "");
-
 constexpr size_t gDirectionalLights = 1;
 constexpr size_t gMaxDirectionalLights = 1;
 static_assert(gDirectionalLights <= gMaxDirectionalLights, "");
@@ -51,7 +47,6 @@ RootSignature* pRootSignature = NULL;
 Shader* pModelShader = NULL;
 Texture* pTexture = NULL;
 Texture* pSpecularTexture = NULL;
-Buffer* pModelVertexBuffer = NULL;
 Pipeline* pModelPipeline = NULL;
 Pipeline* pModelPipeline2 = NULL;
 
@@ -73,6 +68,7 @@ struct MeshBatch
 	Buffer* pNormalStream;
 	Buffer* pUVStream;
 	Buffer* pIndicesStream;
+	size_t mCountIndices;
 };
 
 struct SceneData
@@ -84,7 +80,7 @@ struct UniformBuffer
 {
 	mat4	view;
 	mat4	proj;
-	mat4	pToWorld[gMaxInstanceCount];
+	mat4	pToWorld;
 } uniformData;
 
 struct DirectionalLight
@@ -329,11 +325,10 @@ public:
 		removeResource(pDirLightsBuffer);
 		removeResource(pSpotLightsBuffer);
 
-		removeResource(pModelVertexBuffer);
 		removeResource(pTexture);
 		removeResource(pSpecularTexture);
 
-		for(size_t i = 0; i < sceneData.meshes.size(); ++i)
+		for (size_t i = 0; i < sceneData.meshes.size(); ++i)
 		{
 			removeResource(sceneData.meshes[i]->pPositionStream);
 			removeResource(sceneData.meshes[i]->pUVStream);
@@ -386,15 +381,15 @@ public:
 
 		vertexLayout.mAttribs[1].mSemantic = SEMANTIC_NORMAL;
 		vertexLayout.mAttribs[1].mFormat = ImageFormat::RGB32F;
-		vertexLayout.mAttribs[1].mBinding = 0;
+		vertexLayout.mAttribs[1].mBinding = 1;
 		vertexLayout.mAttribs[1].mLocation = 1;
-		vertexLayout.mAttribs[1].mOffset = 3 * sizeof(float);
+		vertexLayout.mAttribs[1].mOffset = 0;
 
 		vertexLayout.mAttribs[2].mSemantic = SEMANTIC_TEXCOORD0;
 		vertexLayout.mAttribs[2].mFormat = ImageFormat::RG32F;
-		vertexLayout.mAttribs[2].mBinding = 0;
+		vertexLayout.mAttribs[2].mBinding = 2;
 		vertexLayout.mAttribs[2].mLocation = 2;
-		vertexLayout.mAttribs[2].mOffset = 6 * sizeof(float);
+		vertexLayout.mAttribs[2].mOffset = 0;
 
 		PipelineDesc desc = {};
 		desc.mType = PIPELINE_TYPE_GRAPHICS;
@@ -449,25 +444,22 @@ public:
 		uniformData.proj = projMat;
 
 		// Update Instance Data
-		for (uint32_t i = 0; i < gInstanceCount; ++i)
-		{
-			uniformData.pToWorld[i] = mat4::translation(Vector3(-4.0f + 2.0f * i, -1, 5)) *
-				mat4::rotationX(i % 2 * currentTime) *
-				mat4::rotationY((i) % 3 * currentTime);
-		}
+		uniformData.pToWorld = mat4::translation(Vector3(0.0f, -1, 5)) *
+			mat4::rotationY(currentTime) *
+			mat4::scale(Vector3(0.07f));
 
 		directionalLights[0].direction = float3{ 0.0f, -1.0f, 0.0f };
 		directionalLights[0].ambient = float3{ 0.05f, 0.05f, 0.05f };
 		directionalLights[0].diffuse = float3{ 0.5f, 0.5f, 0.5f };
 		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };
-		lightData.numDirectionalLights = 0;
+		lightData.numDirectionalLights = gDirectionalLights;
 
 		pointLights[0].position = float3{ -4.0f, 4.0f, 5.0f };
 		pointLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
 		pointLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
 		pointLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
 		pointLights[0].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
-		lightData.numPointLights = 0;
+		lightData.numPointLights = gPointLights;
 
 		spotLights[0].position = float3{ 4.0f * sin(currentTime), 0.0f, 0.0f };
 		spotLights[0].direction = float3{ -0.5f, 0.0f, 1.0f };
@@ -557,8 +549,12 @@ public:
 			cmdBindPipeline(cmd, pModelPipeline);
 			{
 				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 7, params);
-				cmdBindVertexBuffer(cmd, 1, &pModelVertexBuffer, NULL);
-				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
+				Buffer* pVertexBuffers[] = { sceneData.meshes[0]->pPositionStream, sceneData.meshes[0]->pNormalStream, sceneData.meshes[0]->pUVStream };
+				cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
+
+				cmdBindIndexBuffer(cmd, sceneData.meshes[0]->pIndicesStream, 0);
+
+				cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
 			}
 
 			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
@@ -716,7 +712,7 @@ public:
 			bufferDesc.pData = subMesh.mPositions.data();
 			bufferDesc.ppBuffer = &pMeshBatch->pPositionStream;
 			addResource(&bufferDesc);
-			
+
 			bufferDesc.mDesc.mVertexStride = sizeof(float3);
 			bufferDesc.mDesc.mSize = subMesh.mNormals.size() * bufferDesc.mDesc.mVertexStride;
 			bufferDesc.pData = subMesh.mNormals.data();
@@ -728,6 +724,8 @@ public:
 			bufferDesc.pData = subMesh.mUvs.data();
 			bufferDesc.ppBuffer = &pMeshBatch->pUVStream;
 			addResource(&bufferDesc);
+
+			pMeshBatch->mCountIndices = subMesh.mIndices.size();
 
 			// Index buffer
 			bufferDesc = {};

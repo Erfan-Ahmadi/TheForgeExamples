@@ -10,7 +10,7 @@ layout(set = 0, binding = 0) uniform UniformData
 {
 	uniform mat4 view;
 	uniform mat4 proj;
-	uniform mat4 world[MAX_INSTANCES];
+	uniform mat4 world;
 };
 
 layout(location = 0) out vec2 outTexCoords;
@@ -19,8 +19,8 @@ layout(location = 2) out vec4 outFragPos;
 
 void main()
 {
-	outFragPos = world[gl_InstanceIndex] * Position;
+	outFragPos = world * Position;
 	gl_Position = proj * view * outFragPos;
 	outTexCoords = TexCoords;
-	outNormal = transpose(inverse(world[gl_InstanceIndex])) * Normal;
+	outNormal = transpose(inverse(world)) * Normal;
 }
