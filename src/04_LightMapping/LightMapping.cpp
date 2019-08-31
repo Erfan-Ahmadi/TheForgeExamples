@@ -366,13 +366,18 @@ public:
 		gVirtualJoystick.InitLRSticks();
 		pCameraController->setVirtualJoystick(&gVirtualJoystick);
 #endif
-		InputSystem::RegisterInputEvent(cameraInputEvent);
+		if (!initInputSystem(pWindow))
+			return false;
+
 		return true;
 	}
 
 	void Exit()
 	{
 		waitQueueIdle(pGraphicsQueue);
+
+		exitInputSystem();
+
 		destroyCameraController(pCameraController);
 
 		gAppUI.Exit();
@@ -670,12 +675,6 @@ public:
 		p = d + lookAt;
 		pCameraController->moveTo(p);
 		pCameraController->lookAt(lookAt);
-	}
-
-	static bool cameraInputEvent(const ButtonData* data)
-	{
-		pCameraController->onInputEvent(data);
-		return true;
 	}
 
 	static void getCubeVertexData(Vertex** vertexData)

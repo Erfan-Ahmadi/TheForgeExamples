@@ -5,8 +5,7 @@
 #include "Common_3/Renderer/ResourceLoader.h"
 
 //Input
-#include "Common_3/OS/Input/InputSystem.h"
-#include "Common_3/OS/Input/InputMappings.h"
+#include "Common_3/OS/Interfaces/IInput.h"
 
 //Math
 #include "Common_3/OS/Math/MathTypes.h"

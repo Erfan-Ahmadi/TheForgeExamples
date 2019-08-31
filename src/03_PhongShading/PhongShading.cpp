@@ -235,11 +235,7 @@ public:
 		pCameraController = createFpsCameraController(camPos, lookAt);
 
 		pCameraController->setMotionParameters(cmp);
-#if defined(TARGET_IOS) || defined(__ANDROID__)
-		gVirtualJoystick.InitLRSticks();
-		pCameraController->setVirtualJoystick(&gVirtualJoystick);
-#endif
-		InputSystem::RegisterInputEvent(cameraInputEvent);
+
 		return true;
 	}
 
@@ -517,12 +513,6 @@ public:
 		p = d + lookAt;
 		pCameraController->moveTo(p);
 		pCameraController->lookAt(lookAt);
-	}
-
-	static bool cameraInputEvent(const ButtonData* data)
-	{
-		pCameraController->onInputEvent(data);
-		return true;
 	}
 
 	static void getCubeVertexData(Vertex** vertexData)
