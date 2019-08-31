@@ -3,8 +3,8 @@
 ### Implementations
   - [x] [Draw Textured Quad](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/01_HelloQuad)
   - [x] [Instancing](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/02_Instancing)
-  - [ ] Load Model
-  - [ ] Gooch Shading
+  - [x] Load Model
+  - [x] Gooch Shading
   - [x] [Phong Shading](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/03_PhongShading)
   - [x] [Light Maps](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/04_LightMapping)
   - [x] [Lighting (Blinn-Phong)](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/04_LightMapping)
