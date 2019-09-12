@@ -362,12 +362,6 @@ public:
 		pCameraController = createFpsCameraController(camPos, lookAt);
 
 		pCameraController->setMotionParameters(cmp);
-#if defined(TARGET_IOS) || defined(__ANDROID__)
-		gVirtualJoystick.InitLRSticks();
-		pCameraController->setVirtualJoystick(&gVirtualJoystick);
-#endif
-		if (!initInputSystem(pWindow))
-			return false;
 
 		return true;
 	}
@@ -375,8 +369,6 @@ public:
 	void Exit()
 	{
 		waitQueueIdle(pGraphicsQueue);
-
-		exitInputSystem();
 
 		destroyCameraController(pCameraController);
 

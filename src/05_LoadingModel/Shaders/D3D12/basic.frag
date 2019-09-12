@@ -19,13 +19,26 @@ struct PointLight
 	float _pad0;
 };
 
+struct SpotLight 
+{
+	float3 position;
+	float3 direction;
+	float2 cutOff;
+	float3 ambient;
+	float3 diffuse;
+	float3 specular;
+    float3 att_params;
+};
+
 StructuredBuffer <DirectionalLight> DirectionalLights	: register(t0);
 StructuredBuffer <PointLight>		PointLights			: register(t1);
+StructuredBuffer <SpotLight>		SpotLights			: register(t2);
 
 cbuffer LightData : register(b0)
 {
 	int numDirectionalLights;
 	int numPointLights;
+	int numSpotLights;
 	float3 viewPos;
 };
 
@@ -43,6 +56,7 @@ Texture2D		TextureSpecular	: register(t6);
 
 float3 calculateDirectionalLight(DirectionalLight dirLight, float3 normal, float3 viewDir, float2 TexCoord);
 float3 calculatePointLight(PointLight pointLight, float3 normal, float3 viewDir, float3 fragPosition, float2 TexCoord);
+float3 calculateSpotLight(SpotLight spotLight, float3 normal, float3 viewDir, float3 fragPosition, float2 TexCoord);
 
 float4 main(VSOutput input) : SV_TARGET
 {
@@ -55,6 +69,8 @@ float4 main(VSOutput input) : SV_TARGET
 		result += calculateDirectionalLight(DirectionalLights[i], normal, viewDir, input.TexCoord);
 	for(int i = 0; i < numPointLights; ++i)
 		result += calculatePointLight(PointLights[i], normal, viewDir, input.FragPos.xyz, input.TexCoord);
+	for(int i = 0; i < numSpotLights; ++i)
+		result += calculateSpotLight(SpotLights[i], normal, viewDir, input.FragPos.xyz, input.TexCoord);
 
     return float4(result, 1.0f);
 }
@@ -102,6 +118,37 @@ float3 calculatePointLight(PointLight pointLight, float3 normal, float3 viewDir,
 	// Specular
 	float spec = pow(max(dot(reflectDir, viewDir), 0.0), 64);
 	float3 specular = spec * pointLight.specular;  
+
+	return attenuation * ((ambient + diffuse) * Texture.Sample(uSampler0, TexCoord).xyz +
+			(specular) * TextureSpecular.Sample(uSampler0, TexCoord).xyz);
+}
+
+float3 calculateSpotLight(SpotLight spotLight, float3 normal, float3 viewDir, float3 fragPosition, float2 TexCoord)
+{
+	float3 difference = spotLight.position - fragPosition;
+	float3 lightDir	= normalize(difference);
+	float3 reflectDir = reflect(-lightDir, normal);
+	float3 halfwayDir = normalize(lightDir + viewDir);
+	
+	float theta = dot(normalize(-spotLight.direction), lightDir);
+	float epsilon = spotLight.cutOff.x - spotLight.cutOff.y;
+	float intensity = clamp((theta - spotLight.cutOff.y) / epsilon , 0.0f, 1.0f);
+	
+	// Calc Attenuation
+	float distance = length(difference);
+	float3 dis = float3(1, distance, pow(distance, 2));
+	float attenuation = 1.0f / dot(dis, spotLight.att_params);
+
+	// Ambient
+    float3 ambient = spotLight.ambient;
+
+	// Diffuse
+	float diff = max(dot(lightDir, normal), 0.0f);
+	float3 diffuse = diff * spotLight.diffuse * intensity;
+
+	// Specular
+	float spec = pow(max(dot(halfwayDir, normal), 0.0), 64);
+	float3 specular = spec * spotLight.specular * intensity;  
 
 	return attenuation * ((ambient + diffuse) * Texture.Sample(uSampler0, TexCoord).xyz +
 			(specular) * TextureSpecular.Sample(uSampler0, TexCoord).xyz);
