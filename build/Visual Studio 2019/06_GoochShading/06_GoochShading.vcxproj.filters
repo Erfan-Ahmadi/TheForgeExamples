@@ -32,5 +32,17 @@
     <None Include="..\..\..\src\06_GoochShading\Shaders\Vulkan\basic.vert">
       <Filter>Shaders\Vulkan</Filter>
     </None>
+    <None Include="..\..\..\src\06_GoochShading\Shaders\D3D12\profile.frag">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
+    <None Include="..\..\..\src\06_GoochShading\Shaders\D3D12\profile.vert">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
+    <None Include="..\..\..\src\06_GoochShading\Shaders\Vulkan\profile.frag">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\06_GoochShading\Shaders\Vulkan\profile.vert">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
   </ItemGroup>
 </Project>

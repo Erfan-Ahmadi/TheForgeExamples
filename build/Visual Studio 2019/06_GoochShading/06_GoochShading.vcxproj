@@ -32,8 +32,12 @@
   <ItemGroup>
     <None Include="..\..\..\src\06_GoochShading\Shaders\D3D12\basic.frag" />
     <None Include="..\..\..\src\06_GoochShading\Shaders\D3D12\basic.vert" />
+    <None Include="..\..\..\src\06_GoochShading\Shaders\D3D12\profile.frag" />
+    <None Include="..\..\..\src\06_GoochShading\Shaders\D3D12\profile.vert" />
     <None Include="..\..\..\src\06_GoochShading\Shaders\Vulkan\basic.frag" />
     <None Include="..\..\..\src\06_GoochShading\Shaders\Vulkan\basic.vert" />
+    <None Include="..\..\..\src\06_GoochShading\Shaders\Vulkan\profile.frag" />
+    <None Include="..\..\..\src\06_GoochShading\Shaders\Vulkan\profile.vert" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{ea809faf-fa7c-44ee-9c2b-466db02c7321}</ProjectGuid>

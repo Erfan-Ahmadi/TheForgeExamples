@@ -155,7 +155,7 @@ public:
 
 		// Initialize profile
 		initProfiler(pRenderer);
-	
+
 		addGpuProfiler(pRenderer, pGraphicsQueue, &pGpuProfiler, "GpuProfiler");
 
 		// Shader
@@ -521,18 +521,21 @@ public:
 
 		beginCmd(cmd);
 		cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
+
+		TextureBarrier textureBarriers[2] = {
+			{ pRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+			{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
+		};
+
+		cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers, false);
+
+		cmdBindRenderTargets(cmd, 1, &pRenderTarget, pDepthBuffer, &loadActions, NULL, NULL, -1, -1);
+		cmdSetViewport(cmd, 0.0f, 0.0f, (float)pRenderTarget->mDesc.mWidth, (float)pRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+		cmdSetScissor(cmd, 0, 0, pRenderTarget->mDesc.mWidth, pRenderTarget->mDesc.mHeight);
+
+
+		cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw Model", true);
 		{
-			TextureBarrier textureBarriers[2] = {
-				{ pRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
-				{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
-			};
-
-			cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers, false);
-
-			cmdBindRenderTargets(cmd, 1, &pRenderTarget, pDepthBuffer, &loadActions, NULL, NULL, -1, -1);
-			cmdSetViewport(cmd, 0.0f, 0.0f, (float)pRenderTarget->mDesc.mWidth, (float)pRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
-			cmdSetScissor(cmd, 0, 0, pRenderTarget->mDesc.mWidth, pRenderTarget->mDesc.mHeight);
-
 			DescriptorData params[3] = {};
 			params[0].pName = "UniformData";
 			params[0].ppBuffers = &pUniformBuffers[gFrameIndex];
@@ -551,16 +554,14 @@ public:
 
 				cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
 			}
-
-			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
-			cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
-
 		}
+		cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
+
+		loadActions = {};
+		loadActions.mLoadActionsColor[0] = LOAD_ACTION_LOAD;
+		cmdBindRenderTargets(cmd, 1, &pRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
+		cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw UI", true);
 		{
-			loadActions = {};
-			loadActions.mLoadActionsColor[0] = LOAD_ACTION_LOAD;
-			cmdBindRenderTargets(cmd, 1, &pRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
-			cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw UI", true);
 			static HiresTimer gTimer;
 			gTimer.GetUSec(true);
 
@@ -581,13 +582,18 @@ public:
 
 			gAppUI.Draw(cmd);
 			cmdBindRenderTargets(cmd, 0, NULL, NULL, NULL, NULL, NULL, -1, -1);
-			cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 		}
+		cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
+
+		textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
+		cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
+
 		cmdEndGpuFrameProfile(cmd, pGpuProfiler);
 		endCmd(cmd);
 
 		queueSubmit(pGraphicsQueue, 1, &cmd, pRenderCompleteFence, 1, &pImageAquiredSemaphore, 1, &pRenderCompleteSemaphore);
 		queuePresent(pGraphicsQueue, pSwapChain, gFrameIndex, 1, &pRenderCompleteSemaphore);
+		flipProfiler();
 	}
 
 	bool addSwapChain()
