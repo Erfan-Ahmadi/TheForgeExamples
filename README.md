@@ -19,4 +19,8 @@
 ### Build
   - [x] Visual Studio 2017:
     * Put Repository folder next to cloned [The-Forge API](https://github.com/ConfettiFX/The-Forge) repository folder
-    * The library files needed next to your application's executable is in **\third-party\The-Forge-Lib**
+    * Build [The-Forge API](https://github.com/ConfettiFX/The-Forge) Renderer and Tools and place library files in **build/VisualStudio2017/$(Configuration)** for example build/VisualStudio2017/ReleaseDx
+    * Assimp: 
+      - Build Assimp for Projects involving Loading Models
+      - Don't change the directory of assimp.lib, the Default is: 
+         - **The-Forge\Common_3\ThirdParty\OpenSource\assimp\4.1.0\win64\Bin**
