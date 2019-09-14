@@ -11,7 +11,7 @@
     - [x] Spot Light
   - [x] [Load Model](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/05_LoadingModel)
   - [x] [Gooch Shading](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/06_GoochShading)
-  - [ ] Profiling and UI
+  - [x] Profiling and UI
   - [ ] **Deferred Lighting**
   - [ ] [Ambient Occlusion](https://github.com/Erfan-Ahmadi/AmbientOcclusion)
   - [ ] Gamma Correction
