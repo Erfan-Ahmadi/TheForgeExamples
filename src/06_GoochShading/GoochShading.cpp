@@ -1,5 +1,8 @@
 #include "../common.h"
 
+#include "Common_3/OS/Interfaces/IProfiler.h"
+#include "Middleware_3/UI/AppUI.h"
+
 //EASTL includes
 #include "Common_3/ThirdParty/OpenSource/EASTL/vector.h"
 #include "Common_3/ThirdParty/OpenSource/EASTL/string.h"
@@ -13,8 +16,6 @@ constexpr size_t gMaxPointLights = 8;
 static_assert(gPointLights <= gMaxPointLights, "");
 
 const uint32_t	gImageCount = 3;
-bool			bToggleMicroProfiler = false;
-bool			bPrevToggleMicroProfiler = false;
 uint32_t		gNumModelPoints;
 
 Renderer* pRenderer = NULL;
@@ -46,11 +47,15 @@ uint32_t			gFrameIndex = 0;
 
 DescriptorBinder* pDescriptorBinder = NULL;
 
-UIApp              gAppUI;
+bool           gMicroProfiler = false;
+bool           bPrevToggleMicroProfiler = false;
+
+UIApp gAppUI;
+GuiComponent* pGui = NULL;
+VirtualJoystickUI gVirtualJoystick;
 GpuProfiler* pGpuProfiler = NULL;
 ICameraController* pCameraController = NULL;
-
-GuiComponent* pGui = NULL;
+TextDrawDesc gFrameTimeDraw = TextDrawDesc(0, 0xff00ffff, 18);
 
 Buffer* pUniformBuffers[gImageCount] = { NULL };
 
@@ -148,6 +153,11 @@ public:
 		// Resource Loading
 		initResourceLoaderInterface(pRenderer);
 
+		// Initialize profile
+		initProfiler(pRenderer);
+	
+		addGpuProfiler(pRenderer, pGraphicsQueue, &pGpuProfiler, "GpuProfiler");
+
 		// Shader
 		ShaderLoadDesc cubeShaderDesc = {};
 		cubeShaderDesc.mStages[0] = { "basic.vert", NULL, 0, FSR_SrcShaders };
@@ -227,12 +237,12 @@ public:
 
 		GuiDesc guiDesc = {};
 		float   dpiScale = getDpiScale().x;
-		guiDesc.mStartSize = vec2(140.0f / dpiScale, 320.0f / dpiScale);
-		guiDesc.mStartPosition = vec2(mSettings.mWidth - guiDesc.mStartSize.getX() * 1.1f, guiDesc.mStartSize.getY() * 0.5f);
+		guiDesc.mStartSize = vec2(140.0f, 320.0f);
+		guiDesc.mStartPosition = vec2(mSettings.mWidth / dpiScale - guiDesc.mStartSize.getX() * 1.1f, guiDesc.mStartSize.getY() * 0.5f);
 
 		pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
 
-		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &bToggleMicroProfiler));
+		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &gMicroProfiler));
 
 		// Camera
 		CameraMotionParameters cmp{ 40.0f, 30.0f, 100.0f };
@@ -242,6 +252,50 @@ public:
 		pCameraController = createFpsCameraController(camPos, lookAt);
 
 		pCameraController->setMotionParameters(cmp);
+		if (!initInputSystem(pWindow))
+			return false;
+
+		// Microprofiler Actions
+		// #TODO: Remove this once the profiler UI is ported to use our UI system
+		InputActionDesc actionDesc = { InputBindings::FLOAT_LEFTSTICK, [](InputActionContext* ctx) { onProfilerButton(false, &ctx->mFloat2, true); return !gMicroProfiler; } };
+		addInputAction(&actionDesc);
+		actionDesc = { InputBindings::BUTTON_SOUTH, [](InputActionContext* ctx) { onProfilerButton(ctx->mBool, ctx->pPosition, false); return true; } };
+		addInputAction(&actionDesc);
+
+		// App Actions
+		actionDesc = { InputBindings::BUTTON_FULLSCREEN, [](InputActionContext* ctx) { toggleFullscreen(((IApp*)ctx->pUserData)->pWindow); return true; }, this };
+		addInputAction(&actionDesc);
+
+		actionDesc = { InputBindings::BUTTON_EXIT, [](InputActionContext* ctx) { requestShutdown(); return true; } };
+		addInputAction(&actionDesc);
+
+		actionDesc =
+		{
+			InputBindings::BUTTON_ANY, [](InputActionContext* ctx)
+			{
+				bool capture = gAppUI.OnButton(ctx->mBinding, ctx->mBool, ctx->pPosition, !gMicroProfiler);
+				setEnableCaptureInput(capture && INPUT_ACTION_PHASE_CANCELED != ctx->mPhase);
+				return true;
+			}, this
+		};
+		addInputAction(&actionDesc);
+
+		typedef bool (*CameraInputHandler)(InputActionContext * ctx, uint32_t index);
+		static CameraInputHandler onCameraInput = [](InputActionContext* ctx, uint32_t index)
+		{
+			if (!gMicroProfiler && !gAppUI.IsFocused() && *ctx->pCaptured)
+			{
+				gVirtualJoystick.OnMove(index, ctx->mPhase != INPUT_ACTION_PHASE_CANCELED, ctx->pPosition);
+				index ? pCameraController->onRotate(ctx->mFloat2) : pCameraController->onMove(ctx->mFloat2);
+			}
+			return true;
+		};
+		actionDesc = { InputBindings::FLOAT_RIGHTSTICK, [](InputActionContext* ctx) { return onCameraInput(ctx, 1); }, NULL, 20.0f, 200.0f, 0.5f };
+		addInputAction(&actionDesc);
+		actionDesc = { InputBindings::FLOAT_LEFTSTICK, [](InputActionContext* ctx) { return onCameraInput(ctx, 0); }, NULL, 20.0f, 200.0f, 1.0f };
+		addInputAction(&actionDesc);
+		actionDesc = { InputBindings::BUTTON_NORTH, [](InputActionContext* ctx) { pCameraController->resetView(); return true; } };
+		addInputAction(&actionDesc);
 
 		return true;
 	}
@@ -249,9 +303,17 @@ public:
 	void Exit()
 	{
 		waitQueueIdle(pGraphicsQueue);
+
+		exitInputSystem();
+
 		destroyCameraController(pCameraController);
 
+		gVirtualJoystick.Exit();
+
 		gAppUI.Exit();
+
+		// Exit profile
+		exitProfiler();
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
@@ -300,10 +362,17 @@ public:
 	{
 		if (!addSwapChain())
 			return false;
+
 		if (!addDepthBuffer())
 			return false;
+
 		if (!gAppUI.Load(pSwapChain->ppSwapchainRenderTargets))
 			return false;
+
+		if (!gVirtualJoystick.Load(pSwapChain->ppSwapchainRenderTargets[0]))
+			return false;
+
+		loadProfiler(pSwapChain->ppSwapchainRenderTargets[0]);
 
 		//layout and pipeline for sphere draw
 		VertexLayout vertexLayout = {};
@@ -354,7 +423,10 @@ public:
 	{
 		waitQueueIdle(pGraphicsQueue);
 
+		unloadProfiler();
 		gAppUI.Unload();
+
+		gVirtualJoystick.Unload();
 
 		removePipeline(pRenderer, pModelPipeline);
 
@@ -364,10 +436,11 @@ public:
 
 	void Update(float deltaTime)
 	{
+		updateInputSystem(mSettings.mWidth, mSettings.mHeight);
+		pCameraController->update(deltaTime);
+
 		static float currentTime;
 		currentTime += deltaTime;
-
-		pCameraController->update(deltaTime);
 
 		// update camera with time
 		mat4 viewMat = pCameraController->getViewMatrix();
@@ -390,6 +463,23 @@ public:
 		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
 
 		viewMat.setTranslation(vec3(0));
+
+		// ProfileSetDisplayMode()
+		// TODO: need to change this better way 
+		if (gMicroProfiler != bPrevToggleMicroProfiler)
+		{
+			Profile& S = *ProfileGet();
+			int nValue = gMicroProfiler ? 1 : 0;
+			nValue = nValue >= 0 && nValue < P_DRAW_SIZE ? nValue : S.nDisplay;
+			S.nDisplay = nValue;
+
+			bPrevToggleMicroProfiler = gMicroProfiler;
+		}
+
+		/************************************************************************/
+		// Update GUI
+		/************************************************************************/
+		gAppUI.Update(deltaTime);
 	}
 
 	void Draw()
@@ -428,7 +518,9 @@ public:
 		loadActions.mClearDepth.stencil = 0;
 
 		Cmd* cmd = ppCmds[gFrameIndex];
+
 		beginCmd(cmd);
+		cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
 		{
 			TextureBarrier textureBarriers[2] = {
 				{ pRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
@@ -464,6 +556,34 @@ public:
 			cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
 
 		}
+		{
+			loadActions = {};
+			loadActions.mLoadActionsColor[0] = LOAD_ACTION_LOAD;
+			cmdBindRenderTargets(cmd, 1, &pRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
+			cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw UI", true);
+			static HiresTimer gTimer;
+			gTimer.GetUSec(true);
+
+			gVirtualJoystick.Draw(cmd, { 1.0f, 1.0f, 1.0f, 1.0f });
+
+			gAppUI.DrawText(cmd, float2(8, 15), eastl::string().sprintf("CPU %f ms", gTimer.GetUSecAverage() / 1000.0f).c_str(), &gFrameTimeDraw);
+
+#if !defined(__ANDROID__)
+			gAppUI.DrawText(
+				cmd, float2(8, 40), eastl::string().sprintf("GPU %f ms", (float)pGpuProfiler->mCumulativeTime * 1000.0f).c_str(),
+				&gFrameTimeDraw);
+			gAppUI.DrawDebugGpuProfile(cmd, float2(8, 65), pGpuProfiler, NULL);
+#endif
+
+			gAppUI.Gui(pGui);
+
+			cmdDrawProfiler(cmd);
+
+			gAppUI.Draw(cmd);
+			cmdBindRenderTargets(cmd, 0, NULL, NULL, NULL, NULL, NULL, -1, -1);
+			cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
+		}
+		cmdEndGpuFrameProfile(cmd, pGpuProfiler);
 		endCmd(cmd);
 
 		queueSubmit(pGraphicsQueue, 1, &cmd, pRenderCompleteFence, 1, &pImageAquiredSemaphore, 1, &pRenderCompleteSemaphore);
