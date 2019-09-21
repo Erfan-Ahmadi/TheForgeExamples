@@ -164,8 +164,8 @@ const char* pTexturesFileNames[] =
 const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_BinShaders
 	"../../../../src/05_LoadingModel/",												// FSR_SrcShaders
-	"../../../../src/05_LoadingModel/",												// FSR_Textures
-	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Meshes
+	"../../../../art/",																// FSR_Textures
+	"../../../../art/",																// FSR_Meshes
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_GpuConfig
 	"",																				// FSR_Animation
@@ -688,7 +688,7 @@ public:
 
 		AssimpImporter importer;
 
-		if (!importer.ImportModel("../../../../src/05_LoadingModel/Meshes/lion.obj", &gModel))
+		if (!importer.ImportModel("../../../../art/Meshes/lion.obj", &gModel))
 		{
 			return false;
 		}

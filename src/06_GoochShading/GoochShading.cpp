@@ -80,7 +80,6 @@ struct UniformBuffer
 	mat4	pToWorld;
 } uniformData;
 
-
 struct PointLight
 {
 	float3 position;
@@ -105,10 +104,10 @@ const char* pTexturesFileNames[] =
 };
 
 const char* pszBases[FSR_Count] = {
-	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_BinShaders
+	"../../../../src/06_GoochShading/",												// FSR_BinShaders
 	"../../../../src/06_GoochShading/",												// FSR_SrcShaders
-	"../../../../src/05_LoadingModel/",												// FSR_Textures
-	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Meshes
+	"../../../../art/",																// FSR_Textures
+	"../../../../art/",																// FSR_Meshes
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_GpuConfig
 	"",																				// FSR_Animation
@@ -120,10 +119,10 @@ const char* pszBases[FSR_Count] = {
 
 AssimpImporter::Model gModel;
 
-class LoadingModel : public IApp
+class GoochShading : public IApp
 {
 public:
-	LoadingModel()
+	GoochShading()
 	{
 	}
 
@@ -691,7 +690,7 @@ public:
 
 		AssimpImporter importer;
 
-		if (!importer.ImportModel("../../../../src/06_GoochShading/Meshes/bunny.obj", &gModel))
+		if (!importer.ImportModel("../../../../art/Meshes/bunny.obj", &gModel))
 		{
 			return false;
 		}
@@ -745,4 +744,4 @@ public:
 	}
 };
 
-DEFINE_APPLICATION_MAIN(LoadingModel)
+DEFINE_APPLICATION_MAIN(GoochShading)

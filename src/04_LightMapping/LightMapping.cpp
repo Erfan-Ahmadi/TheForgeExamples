@@ -153,8 +153,8 @@ const char* pTexturesFileNames[] = { "Skybox_front5" };
 const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_BinShaders
 	"../../../../src/04_LightMapping/",												// FSR_SrcShaders
-	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Textures
-	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Meshes
+	"../../../../art/",																// FSR_Textures
+	"../../../../art/",																// FSR_Meshes
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
 	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_GpuConfig
 	"",																				// FSR_Animation
@@ -205,7 +205,7 @@ public:
 
 		// Main Texture
 		int width, height, channels;
-		uint8_t* raw_image = stbi_load("../../../../src/04_LightMapping/Textures/container2.png", &width, &height, &channels, 4);
+		uint8_t* raw_image = stbi_load("../../../../art/Textures/container2.png", &width, &height, &channels, 4);
 
 		RawImageData raw_image_data = { raw_image, ImageFormat::RGBA8, (uint32_t)width, (uint32_t)height, 1, 1, 1 };
 
@@ -216,7 +216,7 @@ public:
 		addResource(&textureDesc, true);
 
 		// Specular Texture
-		raw_image = stbi_load("../../../../src/04_LightMapping/Textures/container2_specular.png", &width, &height, &channels, 4);
+		raw_image = stbi_load("../../../../art/Textures/container2_specular.png", &width, &height, &channels, 4);
 		textureDesc.pRawImageData = &raw_image_data;
 		raw_image_data = { raw_image, ImageFormat::RGBA8, (uint32_t)width, (uint32_t)height, 1, 1, 1 };
 		textureDesc.ppTexture = &pCubeSpecularTexture;
