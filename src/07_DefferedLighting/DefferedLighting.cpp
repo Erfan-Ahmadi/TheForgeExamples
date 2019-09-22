@@ -29,15 +29,19 @@ Semaphore* pImageAquiredSemaphore = NULL;
 Semaphore* pFirstPassFinishedSemaphore = { NULL };
 
 SwapChain* pSwapChain = NULL;
-RootSignature* pRootSignature = NULL;
+
+RenderTarget* pDepthBuffer = NULL;
+
+RenderTarget* pOffscreenRenderTarget = NULL;
+Cmd* pOffscreenCmd = NULL;
 
 struct
 {
 	Pipeline* pPipeline = NULL;
+	RootSignature* pRootSignature = NULL;
 	Shader* pShader = NULL;
 	RasterizerState* pRastState = NULL;
 	DepthState* pDepthState = NULL;
-	RenderTarget* pDepthBuffer = NULL;
 } firstPipeline, secondPipeline;
 
 uint32_t			gFrameIndex = 0;
@@ -113,6 +117,7 @@ public:
 		addQueue(pRenderer, &queueDesc, &pGraphicsQueue);
 		addCmdPool(pRenderer, pGraphicsQueue, false, &pCmdPool);
 		addCmd_n(pCmdPool, false, gImageCount, &ppCmds);
+		addCmd(pCmdPool, false, &pOffscreenCmd);
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
@@ -120,6 +125,8 @@ public:
 			addSemaphore(pRenderer, &pRenderCompleteSemaphores[i]);
 		}
 		addSemaphore(pRenderer, &pImageAquiredSemaphore);
+
+		addSemaphore(pRenderer, &pFirstPassFinishedSemaphore);
 
 		// Resource Loading
 		initResourceLoaderInterface(pRenderer);
@@ -130,19 +137,24 @@ public:
 		addGpuProfiler(pRenderer, pGraphicsQueue, &pGpuProfiler, "GpuProfiler");
 
 		// Shader
-		ShaderLoadDesc cubeShaderDesc = {};
-		cubeShaderDesc.mStages[0] = { "basic.vert", NULL, 0, FSR_SrcShaders };
-		cubeShaderDesc.mStages[1] = { "basic.frag", NULL, 0, FSR_SrcShaders };
-		addShader(pRenderer, &cubeShaderDesc, &firstPipeline.pShader);
+		ShaderLoadDesc shaderDesc = {};
+		shaderDesc.mStages[0] = { "offscreen.vert", NULL, 0, FSR_SrcShaders };
+		shaderDesc.mStages[1] = { "offscreen.frag", NULL, 0, FSR_SrcShaders };
+		addShader(pRenderer, &shaderDesc, &firstPipeline.pShader);
+		shaderDesc.mStages[0] = { "deffered.vert", NULL, 0, FSR_SrcShaders };
+		shaderDesc.mStages[1] = { "deffered.frag", NULL, 0, FSR_SrcShaders };
+		addShader(pRenderer, &shaderDesc, &secondPipeline.pShader);
 
 		// Resource Binding
 		RootSignatureDesc rootDesc = {};
 		rootDesc.mShaderCount = 1;
 		rootDesc.ppShaders = &firstPipeline.pShader;
-		addRootSignature(pRenderer, &rootDesc, &pRootSignature);
+		addRootSignature(pRenderer, &rootDesc, &firstPipeline.pRootSignature);
+		rootDesc.ppShaders = &secondPipeline.pShader;
+		addRootSignature(pRenderer, &rootDesc, &secondPipeline.pRootSignature);
 
-		DescriptorBinderDesc descriptorBinderDescs[1] = { { pRootSignature } };
-		addDescriptorBinder(pRenderer, 0, 1, descriptorBinderDescs, &pDescriptorBinder);
+		DescriptorBinderDesc descriptorBinderDescs[2] = { { firstPipeline.pRootSignature }, { secondPipeline.pRootSignature } };
+		addDescriptorBinder(pRenderer, 0, 2, descriptorBinderDescs, &pDescriptorBinder);
 
 		BufferLoadDesc bufferDesc = {};
 
@@ -170,6 +182,7 @@ public:
 		RasterizerStateDesc rasterizerStateDesc = {};
 		rasterizerStateDesc.mCullMode = CULL_MODE_FRONT;
 		addRasterizerState(pRenderer, &rasterizerStateDesc, &firstPipeline.pRastState);
+		addRasterizerState(pRenderer, &rasterizerStateDesc, &secondPipeline.pRastState);
 
 		// Depth State
 		DepthStateDesc depthStateDesc = {};
@@ -177,6 +190,7 @@ public:
 		depthStateDesc.mDepthWrite = true;
 		depthStateDesc.mDepthFunc = CMP_LEQUAL;
 		addDepthState(pRenderer, &depthStateDesc, &firstPipeline.pDepthState);
+		addDepthState(pRenderer, &depthStateDesc, &secondPipeline.pDepthState);
 
 		finishResourceLoading();
 
@@ -284,8 +298,12 @@ public:
 		removeShader(pRenderer, firstPipeline.pShader);
 		removeDepthState(firstPipeline.pDepthState);
 		removeRasterizerState(firstPipeline.pRastState);
+		removeRootSignature(pRenderer, firstPipeline.pRootSignature);
 
-		removeRootSignature(pRenderer, pRootSignature);
+		removeShader(pRenderer, secondPipeline.pShader);
+		removeDepthState(secondPipeline.pDepthState);
+		removeRasterizerState(secondPipeline.pRastState);
+		removeRootSignature(pRenderer, secondPipeline.pRootSignature);
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
@@ -293,6 +311,8 @@ public:
 			removeSemaphore(pRenderer, pRenderCompleteSemaphores[i]);
 		}
 		removeSemaphore(pRenderer, pImageAquiredSemaphore);
+
+		removeSemaphore(pRenderer, pFirstPassFinishedSemaphore);
 
 		removeCmd_n(pCmdPool, gImageCount, ppCmds);
 		removeCmdPool(pRenderer, pCmdPool);
@@ -307,8 +327,7 @@ public:
 		if (!addSwapChain())
 			return false;
 
-		if (!addDepthBuffer())
-			return false;
+		createRenderTargets();
 
 		if (!gAppUI.Load(pSwapChain->ppSwapchainRenderTargets))
 			return false;
@@ -318,32 +337,8 @@ public:
 
 		loadProfiler(pSwapChain->ppSwapchainRenderTargets[0]);
 
-		//layout and pipeline for sphere draw
-		VertexLayout vertexLayout = {};
-		vertexLayout.mAttribCount = 1;
-
-		vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
-		vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
-		vertexLayout.mAttribs[0].mBinding = 0;
-		vertexLayout.mAttribs[0].mLocation = 0;
-		vertexLayout.mAttribs[0].mOffset = 0;
-
-		PipelineDesc desc = {};
-		desc.mType = PIPELINE_TYPE_GRAPHICS;
-		GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
-		pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
-		pipelineSettings.mRenderTargetCount = 1;
-		pipelineSettings.pDepthState = firstPipeline.pDepthState;
-		pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
-		pipelineSettings.pSrgbValues = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSrgb;
-		pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
-		pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
-		pipelineSettings.mDepthStencilFormat = firstPipeline.pDepthBuffer->mDesc.mFormat;
-		pipelineSettings.pRootSignature = pRootSignature;
-		pipelineSettings.pShaderProgram = firstPipeline.pShader;
-		pipelineSettings.pVertexLayout = &vertexLayout;
-		pipelineSettings.pRasterizerState = firstPipeline.pRastState;
-		addPipeline(pRenderer, &desc, &firstPipeline.pPipeline);
+		addOffscreenPipeline();
+		addDefferedPipeline();
 
 		return true;
 	}
@@ -358,9 +353,10 @@ public:
 		gVirtualJoystick.Unload();
 
 		removePipeline(pRenderer, firstPipeline.pPipeline);
+		removePipeline(pRenderer, secondPipeline.pPipeline);
 
 		removeSwapChain(pRenderer, pSwapChain);
-		removeRenderTarget(pRenderer, firstPipeline.pDepthBuffer);
+		removeRenderTarget(pRenderer, pDepthBuffer);
 	}
 
 	void Update(float deltaTime)
@@ -410,14 +406,8 @@ public:
 	{
 		acquireNextImage(pRenderer, pSwapChain, pImageAquiredSemaphore, NULL, &gFrameIndex);
 
-		RenderTarget* pRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
 		Semaphore* pRenderCompleteSemaphore = pRenderCompleteSemaphores[gFrameIndex];
 		Fence* pRenderCompleteFence = pRenderCompleteFences[gFrameIndex];
-
-		FenceStatus fenceStatus;
-		getFenceStatus(pRenderer, pRenderCompleteFence, &fenceStatus);
-		if (fenceStatus == FENCE_STATUS_INCOMPLETE)
-			waitForFences(pRenderer, 1, &pRenderCompleteFence);
 
 		// Update uniform buffers
 		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &uniformData };
@@ -434,78 +424,129 @@ public:
 		loadActions.mClearDepth.depth = 1.0f;
 		loadActions.mClearDepth.stencil = 0;
 
-		Cmd* cmd = ppCmds[gFrameIndex];
-
-		beginCmd(cmd);
-		cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
-
-		TextureBarrier textureBarriers[2] = {
-			{ pRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
-			{ firstPipeline.pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
-		};
-
-		cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers, false);
-
-		cmdBindRenderTargets(cmd, 1, &pRenderTarget, firstPipeline.pDepthBuffer, &loadActions, NULL, NULL, -1, -1);
-		cmdSetViewport(cmd, 0.0f, 0.0f, (float)pRenderTarget->mDesc.mWidth, (float)pRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
-		cmdSetScissor(cmd, 0, 0, pRenderTarget->mDesc.mWidth, pRenderTarget->mDesc.mHeight);
-
-
-		cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw Scene", true);
+		// Record First Pass Command Buffer
+		Cmd* cmd = pOffscreenCmd;
 		{
-			DescriptorData params[1] = {};
-			params[0].pName = "UniformData";
-			params[0].ppBuffers = &pUniformBuffers[gFrameIndex];
-
-			cmdBindPipeline(cmd, firstPipeline.pPipeline);
+			beginCmd(cmd);
 			{
-				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 1, params);
-				Buffer* pVertexBuffers[] = { sceneData.meshes[0]->pPositionStream };
-				cmdBindVertexBuffer(cmd, 1, pVertexBuffers, NULL);
+				TextureBarrier textureBarriers[2] = {
+					{ pOffscreenRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+					{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
+				};
 
-				cmdBindIndexBuffer(cmd, sceneData.meshes[0]->pIndicesStream, 0);
+				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers, false);
 
-				cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
+				cmdBindRenderTargets(cmd, 1, &pOffscreenRenderTarget, pDepthBuffer, &loadActions, NULL, NULL, -1, -1);
+				cmdSetViewport(cmd, 0.0f, 0.0f, (float)pOffscreenRenderTarget->mDesc.mWidth, (float)pOffscreenRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+				cmdSetScissor(cmd, 0, 0, pOffscreenRenderTarget->mDesc.mWidth, pOffscreenRenderTarget->mDesc.mHeight);
+
+				{
+					DescriptorData params[1] = {};
+					params[0].pName = "UniformData";
+					params[0].ppBuffers = &pUniformBuffers[gFrameIndex];
+
+					cmdBindPipeline(cmd, firstPipeline.pPipeline);
+					{
+						cmdBindDescriptors(cmd, pDescriptorBinder, firstPipeline.pRootSignature, 1, params);
+						Buffer* pVertexBuffers[] = { sceneData.meshes[0]->pPositionStream };
+						cmdBindVertexBuffer(cmd, 1, pVertexBuffers, NULL);
+
+						cmdBindIndexBuffer(cmd, sceneData.meshes[0]->pIndicesStream, 0);
+
+						cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
+					}
+				}
+
+				textureBarriers[0] = { pOffscreenRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
+				cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
 			}
+			endCmd(cmd);
 		}
-		cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
-		loadActions = {};
-		loadActions.mLoadActionsColor[0] = LOAD_ACTION_LOAD;
-		cmdBindRenderTargets(cmd, 1, &pRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
-		cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw UI", true);
+		// Submit First Pass Command Buffer
+		queueSubmit(pGraphicsQueue, 1, &cmd, NULL, 1, &pImageAquiredSemaphore, 1, &pFirstPassFinishedSemaphore);
+
+		// Record Second Pass Command Buffer
+		cmd = ppCmds[gFrameIndex];
 		{
-			static HiresTimer gTimer;
-			gTimer.GetUSec(true);
+			RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
 
-			gVirtualJoystick.Draw(cmd, { 1.0f, 1.0f, 1.0f, 1.0f });
+			beginCmd(cmd);
+			{
+				cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
 
-			gAppUI.DrawText(cmd, float2(8, 15), eastl::string().sprintf("CPU %f ms", gTimer.GetUSecAverage() / 1000.0f).c_str(), &gFrameTimeDraw);
+				TextureBarrier textureBarriers[3] = {
+					{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+					{ pOffscreenRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
+					{ pDepthBuffer->pTexture, RESOURCE_STATE_SHADER_RESOURCE }
+				};
+
+				cmdResourceBarrier(cmd, 0, nullptr, 3, textureBarriers, false);
+
+				loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
+				cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
+				cmdSetViewport(cmd, 0.0f, 0.0f, (float)pSwapChainRenderTarget->mDesc.mWidth, (float)pSwapChainRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+				cmdSetScissor(cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth, pSwapChainRenderTarget->mDesc.mHeight);
+
+				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw Scene", true);
+				{
+					DescriptorData params[2] = {};
+					params[0].pName = "UniformData";
+					params[0].ppBuffers = &pUniformBuffers[gFrameIndex];
+					params[1].pName = "depthBuffer";
+					params[1].ppTextures = &pDepthBuffer->pTexture;
+
+					cmdBindPipeline(cmd, secondPipeline.pPipeline);
+					{
+						// Draw Fullscreen Quad
+						cmdDraw(cmd, 3, 0);
+					}
+				}
+				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
+
+				loadActions = {};
+				loadActions.mLoadActionsColor[0] = LOAD_ACTION_LOAD;
+				cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
+				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw UI", true);
+				{
+					static HiresTimer gTimer;
+					gTimer.GetUSec(true);
+
+					gVirtualJoystick.Draw(cmd, { 1.0f, 1.0f, 1.0f, 1.0f });
+
+					gAppUI.DrawText(cmd, float2(8, 15), eastl::string().sprintf("CPU %f ms", gTimer.GetUSecAverage() / 1000.0f).c_str(), &gFrameTimeDraw);
 
 #if !defined(__ANDROID__)
-			gAppUI.DrawText(
-				cmd, float2(8, 40), eastl::string().sprintf("GPU %f ms", (float)pGpuProfiler->mCumulativeTime * 1000.0f).c_str(),
-				&gFrameTimeDraw);
-			gAppUI.DrawDebugGpuProfile(cmd, float2(8, 65), pGpuProfiler, NULL);
+					gAppUI.DrawText(
+						cmd, float2(8, 40), eastl::string().sprintf("GPU %f ms", (float)pGpuProfiler->mCumulativeTime * 1000.0f).c_str(),
+						&gFrameTimeDraw);
+					gAppUI.DrawDebugGpuProfile(cmd, float2(8, 65), pGpuProfiler, NULL);
 #endif
 
-			gAppUI.Gui(pGui);
+					gAppUI.Gui(pGui);
 
-			cmdDrawProfiler(cmd);
+					cmdDrawProfiler(cmd);
 
-			gAppUI.Draw(cmd);
-			cmdBindRenderTargets(cmd, 0, NULL, NULL, NULL, NULL, NULL, -1, -1);
+					gAppUI.Draw(cmd);
+					cmdBindRenderTargets(cmd, 0, NULL, NULL, NULL, NULL, NULL, -1, -1);
+				}
+				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
+
+				textureBarriers[0] = { pSwapChainRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
+				cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
+
+				cmdEndGpuFrameProfile(cmd, pGpuProfiler);
+			}
+			endCmd(cmd);
 		}
-		cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
-		textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
-		cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
+		// Submit Second Pass Command Buffer
+		queueSubmit(pGraphicsQueue, 1, &cmd, pRenderCompleteFence, 1, &pFirstPassFinishedSemaphore, 1, &pRenderCompleteSemaphore);
 
-		cmdEndGpuFrameProfile(cmd, pGpuProfiler);
-		endCmd(cmd);
-
-		queueSubmit(pGraphicsQueue, 1, &cmd, pRenderCompleteFence, 1, &pImageAquiredSemaphore, 1, &pRenderCompleteSemaphore);
 		queuePresent(pGraphicsQueue, pSwapChain, gFrameIndex, 1, &pRenderCompleteSemaphore);
+
+		waitForFences(pRenderer, 1, &pRenderCompleteFence);
+
 		flipProfiler();
 	}
 
@@ -525,21 +566,95 @@ public:
 		return pSwapChain != NULL;
 	}
 
-	bool addDepthBuffer()
+	void createRenderTargets()
 	{
-		RenderTargetDesc depthRT = {};
-		depthRT.mArraySize = 1;
-		depthRT.mClearValue.depth = 1.0f;
-		depthRT.mClearValue.stencil = 0.0f;
-		depthRT.mFormat = ImageFormat::D32F;
-		depthRT.mDepth = 1;
-		depthRT.mWidth = mSettings.mWidth;
-		depthRT.mHeight = mSettings.mHeight;
-		depthRT.mSampleCount = SAMPLE_COUNT_1;
-		depthRT.mSampleQuality = 0;
-		::addRenderTarget(pRenderer, &depthRT, &firstPipeline.pDepthBuffer);
+		ClearValue colorClearBlack = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-		return firstPipeline.pDepthBuffer != NULL;
+		// Offscreen 
+		RenderTargetDesc rtDesc = {};
+		rtDesc.mClearValue = colorClearBlack;
+		rtDesc.mArraySize = 1;
+		rtDesc.mClearValue.depth = 1.0f;
+		rtDesc.mClearValue.stencil = 0.0f;
+		rtDesc.mFormat = ImageFormat::RGBA8;
+		rtDesc.mDepth = 1;
+		rtDesc.mWidth = mSettings.mWidth;
+		rtDesc.mHeight = mSettings.mHeight;
+		rtDesc.mSampleCount = SAMPLE_COUNT_1;
+		rtDesc.mSampleQuality = 0;
+		::addRenderTarget(pRenderer, &rtDesc, &pOffscreenRenderTarget);
+
+		// Depth Buffer
+		rtDesc.mArraySize = 1;
+		rtDesc.mClearValue.depth = 1.0f;
+		rtDesc.mClearValue.stencil = 0.0f;
+		rtDesc.mFormat = ImageFormat::D32F;
+		rtDesc.mDepth = 1;
+		rtDesc.mWidth = mSettings.mWidth;
+		rtDesc.mHeight = mSettings.mHeight;
+		rtDesc.mSampleCount = SAMPLE_COUNT_1;
+		rtDesc.mSampleQuality = 0;
+		::addRenderTarget(pRenderer, &rtDesc, &pDepthBuffer);
+	}
+
+	void addOffscreenPipeline()
+	{
+		//layout and pipeline for sphere draw
+		VertexLayout vertexLayout = {};
+		vertexLayout.mAttribCount = 1;
+
+		vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
+		vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
+		vertexLayout.mAttribs[0].mBinding = 0;
+		vertexLayout.mAttribs[0].mLocation = 0;
+		vertexLayout.mAttribs[0].mOffset = 0;
+
+		PipelineDesc desc = {};
+		desc.mType = PIPELINE_TYPE_GRAPHICS;
+		GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
+		pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
+		pipelineSettings.mRenderTargetCount = 1;
+		pipelineSettings.pDepthState = secondPipeline.pDepthState;
+		pipelineSettings.pColorFormats = &pOffscreenRenderTarget->mDesc.mFormat;
+		pipelineSettings.pSrgbValues = &pOffscreenRenderTarget->mDesc.mSrgb;
+		pipelineSettings.mSampleCount = pOffscreenRenderTarget->mDesc.mSampleCount;
+		pipelineSettings.mSampleQuality = pOffscreenRenderTarget->mDesc.mSampleQuality;
+		pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
+		pipelineSettings.pRootSignature = secondPipeline.pRootSignature;
+		pipelineSettings.pShaderProgram = secondPipeline.pShader;
+		pipelineSettings.pVertexLayout = &vertexLayout;
+		pipelineSettings.pRasterizerState = secondPipeline.pRastState;
+		addPipeline(pRenderer, &desc, &secondPipeline.pPipeline);
+	}
+
+	void addDefferedPipeline()
+	{
+		//layout and pipeline for sphere draw
+		VertexLayout vertexLayout = {};
+		vertexLayout.mAttribCount = 1;
+
+		vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
+		vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
+		vertexLayout.mAttribs[0].mBinding = 0;
+		vertexLayout.mAttribs[0].mLocation = 0;
+		vertexLayout.mAttribs[0].mOffset = 0;
+
+		PipelineDesc desc = {};
+		desc.mType = PIPELINE_TYPE_GRAPHICS;
+		GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
+		pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
+		pipelineSettings.mRenderTargetCount = 1;
+		pipelineSettings.pDepthState = firstPipeline.pDepthState;
+		pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
+		pipelineSettings.pSrgbValues = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSrgb;
+		pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
+		pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
+		pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
+		pipelineSettings.pRootSignature = firstPipeline.pRootSignature;
+		pipelineSettings.pShaderProgram = firstPipeline.pShader;
+		pipelineSettings.pVertexLayout = &vertexLayout;
+		pipelineSettings.pRasterizerState = firstPipeline.pRastState;
+		addPipeline(pRenderer, &desc, &firstPipeline.pPipeline);
 	}
 
 	const char* GetName() { return "07_DefferedLighting"; }

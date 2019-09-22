@@ -15,20 +15,11 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\basic.vert">
-      <Filter>Shaders\D3D12</Filter>
-    </None>
     <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\profile.frag">
       <Filter>Shaders\D3D12</Filter>
     </None>
     <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\profile.vert">
       <Filter>Shaders\D3D12</Filter>
-    </None>
-    <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\basic.frag">
-      <Filter>Shaders\D3D12</Filter>
-    </None>
-    <None Include="..\..\..\src\07_DefferedLighting\Shaders\Vulkan\basic.vert">
-      <Filter>Shaders\Vulkan</Filter>
     </None>
     <None Include="..\..\..\src\07_DefferedLighting\Shaders\Vulkan\profile.frag">
       <Filter>Shaders\Vulkan</Filter>
@@ -36,8 +27,29 @@
     <None Include="..\..\..\src\07_DefferedLighting\Shaders\Vulkan\profile.vert">
       <Filter>Shaders\Vulkan</Filter>
     </None>
-    <None Include="..\..\..\src\07_DefferedLighting\Shaders\Vulkan\basic.frag">
+    <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\offscreen.frag">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
+    <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\offscreen.vert">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
+    <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\deffered.frag">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
+    <None Include="..\..\..\src\07_DefferedLighting\Shaders\Vulkan\offscreen.frag">
       <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\07_DefferedLighting\Shaders\Vulkan\offscreen.vert">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\07_DefferedLighting\Shaders\Vulkan\deffered.frag">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\07_DefferedLighting\Shaders\Vulkan\deffered.vert">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\deffered.vert">
+      <Filter>Shaders\D3D12</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

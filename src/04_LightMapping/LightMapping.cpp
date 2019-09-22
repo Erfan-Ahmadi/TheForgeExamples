@@ -534,7 +534,7 @@ public:
 	{
 		acquireNextImage(pRenderer, pSwapChain, pImageAquiredSemaphore, NULL, &gFrameIndex);
 
-		RenderTarget* pRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
+		RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
 		Semaphore* pRenderCompleteSemaphore = pRenderCompleteSemaphores[gFrameIndex];
 		Fence* pRenderCompleteFence = pRenderCompleteFences[gFrameIndex];
 
@@ -575,15 +575,15 @@ public:
 		beginCmd(cmd);
 		{
 			TextureBarrier textureBarriers[2] = {
-				{ pRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+				{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
 				{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
 			};
 
 			cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers, false);
 
-			cmdBindRenderTargets(cmd, 1, &pRenderTarget, pDepthBuffer, &loadActions, NULL, NULL, -1, -1);
-			cmdSetViewport(cmd, 0.0f, 0.0f, (float)pRenderTarget->mDesc.mWidth, (float)pRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
-			cmdSetScissor(cmd, 0, 0, pRenderTarget->mDesc.mWidth, pRenderTarget->mDesc.mHeight);
+			cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, pDepthBuffer, &loadActions, NULL, NULL, -1, -1);
+			cmdSetViewport(cmd, 0.0f, 0.0f, (float)pSwapChainRenderTarget->mDesc.mWidth, (float)pSwapChainRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+			cmdSetScissor(cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth, pSwapChainRenderTarget->mDesc.mHeight);
 
 			DescriptorData params[7] = {};
 			params[0].pName = "Texture";
@@ -608,7 +608,7 @@ public:
 				cmdDrawInstanced(cmd, 6 * 6, 0, gInstanceCount, 0);
 			}
 
-			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
+			textureBarriers[0] = { pSwapChainRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
 			cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
 
 		}

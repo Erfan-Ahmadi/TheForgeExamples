@@ -5,6 +5,11 @@ cbuffer UniformData : register(b0)
 	float4x4 world;
 };
 
+struct VSInput
+{
+    float4 Position : POSITION;
+};
+
 struct VSOutput {
 	float4 Position : SV_POSITION;
 };
