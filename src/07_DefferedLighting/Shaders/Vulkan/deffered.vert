@@ -1,15 +1,16 @@
 #version 450 core
 
-layout(location = 0) in vec4 Position;
+layout(location = 0) out vec2 outTexCoords;
 
-layout(set = 0, binding = 0) uniform UniformData
-{
-	uniform mat4 view;
-	uniform mat4 proj;
-	uniform mat4 world;
-};
+void main(void)
+{	
+	vec4 p;
+	uint id = gl_VertexIndex;
+	p.x = (id == 2) ? 3.0 : -1.0;
+	p.y = (id == 0) ? 3.0 : -1.0;
+	p.z = 1.0;
+	p.w = 1.0;
 
-void main()
-{
-	gl_Position = proj * view * world * Position;
+	gl_Position = p.xyzw;
+	outTexCoords = p.xy * vec2(0.5, -0.5) + 0.5;
 }

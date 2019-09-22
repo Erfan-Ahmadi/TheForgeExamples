@@ -28,6 +28,8 @@ Semaphore* pRenderCompleteSemaphores[gImageCount] = { NULL };
 Semaphore* pImageAquiredSemaphore = NULL;
 Semaphore* pFirstPassFinishedSemaphore = { NULL };
 
+Sampler* pSampler;
+
 SwapChain* pSwapChain = NULL;
 
 RenderTarget* pDepthBuffer = NULL;
@@ -145,12 +147,26 @@ public:
 		shaderDesc.mStages[1] = { "deffered.frag", NULL, 0, FSR_SrcShaders };
 		addShader(pRenderer, &shaderDesc, &secondPipeline.pShader);
 
+		// Static Sampler
+		SamplerDesc samplerDesc = { FILTER_LINEAR,
+									FILTER_LINEAR,
+									MIPMAP_MODE_NEAREST,
+									ADDRESS_MODE_CLAMP_TO_EDGE,
+									ADDRESS_MODE_CLAMP_TO_EDGE,
+									ADDRESS_MODE_CLAMP_TO_EDGE };
+		addSampler(pRenderer, &samplerDesc, &pSampler);
+
 		// Resource Binding
+		const char* samplerNames = { "uSampler0 "};
+
 		RootSignatureDesc rootDesc = {};
 		rootDesc.mShaderCount = 1;
 		rootDesc.ppShaders = &firstPipeline.pShader;
 		addRootSignature(pRenderer, &rootDesc, &firstPipeline.pRootSignature);
 		rootDesc.ppShaders = &secondPipeline.pShader;
+		rootDesc.mStaticSamplerCount = 1;
+		rootDesc.ppStaticSamplerNames = &samplerNames;
+		rootDesc.ppStaticSamplers = &pSampler;
 		addRootSignature(pRenderer, &rootDesc, &secondPipeline.pRootSignature);
 
 		DescriptorBinderDesc descriptorBinderDescs[2] = { { firstPipeline.pRootSignature }, { secondPipeline.pRootSignature } };
@@ -378,7 +394,7 @@ public:
 		uniformData.proj = projMat;
 
 		// Update Instance Data
-		uniformData.pToWorld = mat4::translation(Vector3(0.0f, -1, 5)) *
+		uniformData.pToWorld = mat4::translation(Vector3(0.0f, -1, 4 + currentTime)) *
 			mat4::rotationY(currentTime) *
 			mat4::scale(Vector3(1.5f));
 
@@ -490,14 +506,14 @@ public:
 
 				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw Scene", true);
 				{
-					DescriptorData params[2] = {};
-					params[0].pName = "UniformData";
-					params[0].ppBuffers = &pUniformBuffers[gFrameIndex];
-					params[1].pName = "depthBuffer";
-					params[1].ppTextures = &pDepthBuffer->pTexture;
+					DescriptorData params[1] = {};
+					params[0].pName = "depthBuffer";
+					params[0].ppTextures = &pDepthBuffer->pTexture;
 
 					cmdBindPipeline(cmd, secondPipeline.pPipeline);
 					{
+						cmdBindDescriptors(cmd, pDescriptorBinder, secondPipeline.pRootSignature, 1, params);
+
 						// Draw Fullscreen Quad
 						cmdDraw(cmd, 3, 0);
 					}

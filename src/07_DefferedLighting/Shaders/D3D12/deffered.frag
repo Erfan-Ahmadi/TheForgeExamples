@@ -1,5 +1,6 @@
 
-Texture2D<float>	depthBuffer : register(t1);
+Texture2D			depthBuffer : register(t1);
+SamplerState		uSampler0	: register(s0);
 
 struct VSOutput 
 {
@@ -7,13 +8,14 @@ struct VSOutput
     float2 TexCoord		: TEXCOORD;
 };
 
-float getDepthValue()
+float getDepthValue(float2 uv)
 {
-	return 0.5f;
+    float depth = depthBuffer.Sample(uSampler0, uv).x;
+    return 1 - depth;
 }
 
 float4 main(VSOutput input) : SV_TARGET
 {
-	float depth = getDepthValue();
+	float depth = getDepthValue(input.TexCoord);
     return float4(depth, depth, depth, 1);
 }
