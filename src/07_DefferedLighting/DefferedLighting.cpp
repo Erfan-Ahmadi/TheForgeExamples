@@ -20,8 +20,6 @@ const uint32_t	gImageCount = 3;
 Renderer* pRenderer = NULL;
 
 Queue* pGraphicsQueue = NULL;
-CmdPool* pCmdPool = NULL;
-Cmd** ppCmds = NULL;
 
 Fence* pRenderCompleteFences[gImageCount] = { NULL };
 Semaphore* pRenderCompleteSemaphores[gImageCount] = { NULL };
@@ -31,20 +29,6 @@ Semaphore* pFirstPassFinishedSemaphore = { NULL };
 Sampler* pSampler;
 
 SwapChain* pSwapChain = NULL;
-
-RenderTarget* pDepthBuffer = NULL;
-
-RenderTarget* pOffscreenRenderTarget = NULL;
-Cmd* pOffscreenCmd = NULL;
-
-struct
-{
-	Pipeline* pPipeline = NULL;
-	RootSignature* pRootSignature = NULL;
-	Shader* pShader = NULL;
-	RasterizerState* pRastState = NULL;
-	DepthState* pDepthState = NULL;
-} firstPipeline, secondPipeline;
 
 uint32_t			gFrameIndex = 0;
 
@@ -60,7 +44,43 @@ GpuProfiler* pGpuProfiler = NULL;
 ICameraController* pCameraController = NULL;
 TextDrawDesc gFrameTimeDraw = TextDrawDesc(0, 0xff00ffff, 18);
 
+RenderTarget* pDepthBuffer;
+
+RasterizerState* pRasterDefault = NULL;
+DepthState* pDepthDefault = NULL;
+DepthState* pDepthNone = NULL;
+
 Buffer* pUniformBuffers[gImageCount] = { NULL };
+
+class RenderPassData
+{
+public:
+	Shader* pShader;
+	RootSignature* pRootSignature;
+	Pipeline* pPipeline;
+	CmdPool* pCmdPool;
+	Cmd** ppCmds;
+	Buffer* pPerPassCB[gImageCount];
+	eastl::vector<RenderTarget*> RenderTargets;
+	eastl::vector<Texture*>      Textures;
+
+	RenderPassData(Renderer* pRenderer, Queue* bGraphicsQueue, int ImageCount)
+	{
+		addCmdPool(pRenderer, bGraphicsQueue, false, &pCmdPool);
+		addCmd_n(pCmdPool, false, ImageCount, &ppCmds);
+	}
+};
+
+struct RenderPass
+{
+	enum Enum
+	{
+		Offscreen,
+		Deffered
+	};
+};
+
+typedef eastl::unordered_map<RenderPass::Enum, RenderPassData*> RenderPassMap;
 
 struct MeshBatch
 {
@@ -81,7 +101,10 @@ struct UniformBuffer
 	mat4	view;
 	mat4	proj;
 	mat4	pToWorld;
-} uniformData;
+};
+
+RenderPassMap	RenderPasses;
+UniformBuffer	gOffscreenUniformBuffer;
 
 const char* pszBases[FSR_Count] = {
 	"../../../../src/Shaders/bin",													// FSR_BinShaders
@@ -117,9 +140,16 @@ public:
 		queueDesc.mType = CMD_POOL_DIRECT;
 		queueDesc.mFlag = QUEUE_FLAG_NONE;
 		addQueue(pRenderer, &queueDesc, &pGraphicsQueue);
-		addCmdPool(pRenderer, pGraphicsQueue, false, &pCmdPool);
-		addCmd_n(pCmdPool, false, gImageCount, &ppCmds);
-		addCmd(pCmdPool, false, &pOffscreenCmd);
+
+		//Gbuffer pass
+		RenderPassData* pass =
+			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), pRenderer, pGraphicsQueue, gImageCount);
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Offscreen, pass));
+
+		//Shadow pass
+		pass =
+			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), pRenderer, pGraphicsQueue, gImageCount);
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Deffered, pass));
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
@@ -127,7 +157,6 @@ public:
 			addSemaphore(pRenderer, &pRenderCompleteSemaphores[i]);
 		}
 		addSemaphore(pRenderer, &pImageAquiredSemaphore);
-
 		addSemaphore(pRenderer, &pFirstPassFinishedSemaphore);
 
 		// Resource Loading
@@ -142,12 +171,33 @@ public:
 		ShaderLoadDesc shaderDesc = {};
 		shaderDesc.mStages[0] = { "offscreen.vert", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[1] = { "offscreen.frag", NULL, 0, FSR_SrcShaders };
-		addShader(pRenderer, &shaderDesc, &firstPipeline.pShader);
+		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Offscreen]->pShader);
 		shaderDesc.mStages[0] = { "deffered.vert", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[1] = { "deffered.frag", NULL, 0, FSR_SrcShaders };
-		addShader(pRenderer, &shaderDesc, &secondPipeline.pShader);
+		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Deffered]->pShader);
 
-		// Static Sampler
+		//Create rasteriser state objects
+		{
+			RasterizerStateDesc rasterizerStateDesc = {};
+			rasterizerStateDesc.mCullMode = CULL_MODE_NONE;
+			addRasterizerState(pRenderer, &rasterizerStateDesc, &pRasterDefault);
+		}
+
+		//Create depth state objects
+		{
+			DepthStateDesc depthStateDesc = {};
+			depthStateDesc.mDepthTest = true;
+			depthStateDesc.mDepthWrite = true;
+			depthStateDesc.mDepthFunc = CMP_LEQUAL;
+			addDepthState(pRenderer, &depthStateDesc, &pDepthDefault);
+
+			depthStateDesc.mDepthTest = false;
+			depthStateDesc.mDepthWrite = false;
+			depthStateDesc.mDepthFunc = CMP_ALWAYS;
+			addDepthState(pRenderer, &depthStateDesc, &pDepthNone);
+		}
+
+		// Static Samplers
 		SamplerDesc samplerDesc = { FILTER_LINEAR,
 									FILTER_LINEAR,
 									MIPMAP_MODE_NEAREST,
@@ -157,35 +207,54 @@ public:
 		addSampler(pRenderer, &samplerDesc, &pSampler);
 
 		// Resource Binding
-		const char* samplerNames = { "uSampler0 "};
+		const char* samplerNames = { "uSampler0 " };
 
-		RootSignatureDesc rootDesc = {};
-		rootDesc.mShaderCount = 1;
-		rootDesc.ppShaders = &firstPipeline.pShader;
-		addRootSignature(pRenderer, &rootDesc, &firstPipeline.pRootSignature);
-		rootDesc.ppShaders = &secondPipeline.pShader;
-		rootDesc.mStaticSamplerCount = 1;
-		rootDesc.ppStaticSamplerNames = &samplerNames;
-		rootDesc.ppStaticSamplers = &pSampler;
-		addRootSignature(pRenderer, &rootDesc, &secondPipeline.pRootSignature);
+		{
+			// Root Signature for Offscreen Pipeline
+			{
+				RootSignatureDesc rootDesc = {};
+				rootDesc.mShaderCount = 1;
+				rootDesc.ppShaders = &RenderPasses[RenderPass::Offscreen]->pShader;
+				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Offscreen]->pRootSignature);
+			}
 
-		DescriptorBinderDesc descriptorBinderDescs[2] = { { firstPipeline.pRootSignature }, { secondPipeline.pRootSignature } };
+			// Root Signature for Deffered Pipeline
+			{
+				RootSignatureDesc rootDesc = {};
+				rootDesc.mShaderCount = 1;
+				rootDesc.ppShaders = &RenderPasses[RenderPass::Deffered]->pShader;
+				rootDesc.mStaticSamplerCount = 1;
+				rootDesc.ppStaticSamplerNames = &samplerNames;
+				rootDesc.ppStaticSamplers = &pSampler;
+				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Deffered]->pRootSignature);
+			}
+		}
+
+		DescriptorBinderDesc descriptorBinderDescs[2] =
+		{
+			{ RenderPasses[RenderPass::Offscreen]->pRootSignature },
+			{ RenderPasses[RenderPass::Deffered]->pRootSignature }
+		};
+
 		addDescriptorBinder(pRenderer, 0, 2, descriptorBinderDescs, &pDescriptorBinder);
 
-		BufferLoadDesc bufferDesc = {};
-
-		// Uniform Buffer
-		bufferDesc = {};
-		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-		bufferDesc.mDesc.mSize = sizeof(UniformBuffer);
-		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
-		bufferDesc.pData = NULL;
-
-		for (uint32_t i = 0; i < gImageCount; ++i)
+		// Create Uniform Buffers
 		{
-			bufferDesc.ppBuffer = &pUniformBuffers[i];
-			addResource(&bufferDesc);
+			BufferLoadDesc bufferDesc = {};
+
+			// Uniform Buffer
+			bufferDesc = {};
+			bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+			bufferDesc.mDesc.mSize = sizeof(UniformBuffer);
+			bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+			bufferDesc.pData = NULL;
+
+			for (uint32_t i = 0; i < gImageCount; ++i)
+			{
+				bufferDesc.ppBuffer = &pUniformBuffers[i];
+				addResource(&bufferDesc);
+			}
 		}
 
 		if (!LoadModels())
@@ -193,20 +262,6 @@ public:
 			finishResourceLoading();
 			return false;
 		}
-
-		// Rasterizer State
-		RasterizerStateDesc rasterizerStateDesc = {};
-		rasterizerStateDesc.mCullMode = CULL_MODE_FRONT;
-		addRasterizerState(pRenderer, &rasterizerStateDesc, &firstPipeline.pRastState);
-		addRasterizerState(pRenderer, &rasterizerStateDesc, &secondPipeline.pRastState);
-
-		// Depth State
-		DepthStateDesc depthStateDesc = {};
-		depthStateDesc.mDepthTest = true;
-		depthStateDesc.mDepthWrite = true;
-		depthStateDesc.mDepthFunc = CMP_LEQUAL;
-		addDepthState(pRenderer, &depthStateDesc, &firstPipeline.pDepthState);
-		addDepthState(pRenderer, &depthStateDesc, &secondPipeline.pDepthState);
 
 		finishResourceLoading();
 
@@ -301,6 +356,42 @@ public:
 			removeResource(pUniformBuffers[i]);
 		}
 
+		//Delete rendering passes
+		for (RenderPassMap::iterator iter = RenderPasses.begin(); iter != RenderPasses.end(); ++iter)
+		{
+			RenderPassData* pass = iter->second;
+
+			if (!pass)
+				continue;
+
+			for (RenderTarget* rt : pass->RenderTargets)
+			{
+				removeRenderTarget(pRenderer, rt);
+			}
+
+			for (Texture* texture : pass->Textures)
+			{
+				removeResource(texture);
+			}
+
+			for (uint32_t j = 0; j < gImageCount; ++j)
+			{
+				if (pass->pPerPassCB[j])
+					removeResource(pass->pPerPassCB[j]);
+			}
+
+			removeCmd_n(pass->pCmdPool, gImageCount, pass->ppCmds);
+			removeCmdPool(pRenderer, pass->pCmdPool);
+
+			removeShader(pRenderer, pass->pShader);
+
+			removeRootSignature(pRenderer, pass->pRootSignature);
+			pass->~RenderPassData();
+			conf_free(pass);
+		}
+
+		RenderPasses.empty();
+
 		for (size_t i = 0; i < sceneData.meshes.size(); ++i)
 		{
 			removeResource(sceneData.meshes[i]->pPositionStream);
@@ -311,15 +402,9 @@ public:
 
 		removeDescriptorBinder(pRenderer, pDescriptorBinder);
 
-		removeShader(pRenderer, firstPipeline.pShader);
-		removeDepthState(firstPipeline.pDepthState);
-		removeRasterizerState(firstPipeline.pRastState);
-		removeRootSignature(pRenderer, firstPipeline.pRootSignature);
-
-		removeShader(pRenderer, secondPipeline.pShader);
-		removeDepthState(secondPipeline.pDepthState);
-		removeRasterizerState(secondPipeline.pRastState);
-		removeRootSignature(pRenderer, secondPipeline.pRootSignature);
+		removeRasterizerState(pRasterDefault);
+		removeDepthState(pDepthDefault);
+		removeDepthState(pDepthNone);
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
@@ -329,9 +414,6 @@ public:
 		removeSemaphore(pRenderer, pImageAquiredSemaphore);
 
 		removeSemaphore(pRenderer, pFirstPassFinishedSemaphore);
-
-		removeCmd_n(pCmdPool, gImageCount, ppCmds);
-		removeCmdPool(pRenderer, pCmdPool);
 
 		removeResourceLoaderInterface(pRenderer);
 		removeQueue(pGraphicsQueue);
@@ -343,7 +425,7 @@ public:
 		if (!addSwapChain())
 			return false;
 
-		createRenderTargets();
+		CreateRenderTargets();
 
 		if (!gAppUI.Load(pSwapChain->ppSwapchainRenderTargets))
 			return false;
@@ -353,8 +435,7 @@ public:
 
 		loadProfiler(pSwapChain->ppSwapchainRenderTargets[0]);
 
-		addOffscreenPipeline();
-		addDefferedPipeline();
+		CreatePipelines();
 
 		return true;
 	}
@@ -368,11 +449,34 @@ public:
 
 		gVirtualJoystick.Unload();
 
-		removePipeline(pRenderer, firstPipeline.pPipeline);
-		removePipeline(pRenderer, secondPipeline.pPipeline);
+		//Delete rendering passes Textures and Render targets
+		for (RenderPassMap::iterator iter = RenderPasses.begin(); iter != RenderPasses.end(); ++iter)
+		{
+			RenderPassData* pass = iter->second;
 
-		removeSwapChain(pRenderer, pSwapChain);
+			for (RenderTarget* rt : pass->RenderTargets)
+			{
+				removeRenderTarget(pRenderer, rt);
+			}
+
+			for (Texture* texture : pass->Textures)
+			{
+				removeResource(texture);
+			}
+			pass->RenderTargets.clear();
+			pass->Textures.clear();
+
+			if (pass->pPipeline)
+			{
+				removePipeline(pRenderer, pass->pPipeline);
+				pass->pPipeline = NULL;
+			}
+		}
+
 		removeRenderTarget(pRenderer, pDepthBuffer);
+		removeSwapChain(pRenderer, pSwapChain);
+		pDepthBuffer = NULL;
+		pSwapChain = NULL;
 	}
 
 	void Update(float deltaTime)
@@ -390,11 +494,11 @@ public:
 		const float horizontal_fov = PI / 2.0f;
 		mat4        projMat = mat4::perspective(horizontal_fov, aspectInverse, 0.1f, 1000.0f);
 
-		uniformData.view = viewMat;
-		uniformData.proj = projMat;
+		gOffscreenUniformBuffer.view = viewMat;
+		gOffscreenUniformBuffer.proj = projMat;
 
 		// Update Instance Data
-		uniformData.pToWorld = mat4::translation(Vector3(0.0f, -1, 4 + currentTime)) *
+		gOffscreenUniformBuffer.pToWorld = mat4::translation(Vector3(0.0f, -1, 4 + currentTime)) *
 			mat4::rotationY(currentTime) *
 			mat4::scale(Vector3(1.5f));
 
@@ -426,7 +530,7 @@ public:
 		Fence* pRenderCompleteFence = pRenderCompleteFences[gFrameIndex];
 
 		// Update uniform buffers
-		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &uniformData };
+		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &gOffscreenUniformBuffer };
 		updateResource(&viewProjCbv);
 
 		// Load Actions
@@ -440,30 +544,60 @@ public:
 		loadActions.mClearDepth.depth = 1.0f;
 		loadActions.mClearDepth.stencil = 0;
 
-		// Record First Pass Command Buffer
-		Cmd* cmd = pOffscreenCmd;
+		// Offscreen Pass
+		Cmd* cmd = RenderPasses[RenderPass::Offscreen]->ppCmds[gFrameIndex];
 		{
 			beginCmd(cmd);
+			cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
 			{
-				TextureBarrier textureBarriers[2] = {
-					{ pOffscreenRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
-					{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
-				};
+				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Offscreen Pass", true);
 
-				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers, false);
+				//Clear G-buffers and Depth buffer
+				LoadActionsDesc loadActions = {};
+				for (uint32_t i = 0; i < RenderPasses[RenderPass::Offscreen]->RenderTargets.size(); ++i)
+				{
+					loadActions.mLoadActionsColor[i] = LOAD_ACTION_CLEAR;
+					loadActions.mClearColorValues[i] = RenderPasses[RenderPass::Offscreen]->RenderTargets[i]->mDesc.mClearValue;
+				}
 
-				cmdBindRenderTargets(cmd, 1, &pOffscreenRenderTarget, pDepthBuffer, &loadActions, NULL, NULL, -1, -1);
-				cmdSetViewport(cmd, 0.0f, 0.0f, (float)pOffscreenRenderTarget->mDesc.mWidth, (float)pOffscreenRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
-				cmdSetScissor(cmd, 0, 0, pOffscreenRenderTarget->mDesc.mWidth, pOffscreenRenderTarget->mDesc.mHeight);
+				// Clear depth to the far plane and stencil to 0
+				loadActions.mLoadActionDepth = LOAD_ACTION_CLEAR;
+				loadActions.mClearDepth = { 1.0f, 0.0f };
+
+				// Transfer G-buffers to render target state for each buffer
+				TextureBarrier barrier;
+				for (uint32_t i = 0; i < RenderPasses[RenderPass::Offscreen]->RenderTargets.size(); ++i)
+				{
+					barrier = { RenderPasses[RenderPass::Offscreen]->RenderTargets[i]->pTexture, RESOURCE_STATE_RENDER_TARGET };
+					cmdResourceBarrier(cmd, 0, NULL, 1, &barrier, false);
+				}
+
+				// Transfer DepthBuffer to a DephtWrite State
+				barrier = { pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE };
+				cmdResourceBarrier(cmd, 0, NULL, 1, &barrier, false);
+
+				cmdBindRenderTargets(
+					cmd,
+					(uint32_t)RenderPasses[RenderPass::Offscreen]->RenderTargets.size(),
+					RenderPasses[RenderPass::Offscreen]->RenderTargets.data(),
+					pDepthBuffer,
+					&loadActions, NULL, NULL, -1, -1);
+
+				cmdSetViewport(
+					cmd, 0.0f, 0.0f, (float)RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mWidth,
+					(float)RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mHeight, 0.0f, 1.0f);
+				cmdSetScissor(
+					cmd, 0, 0, RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mWidth,
+					RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mHeight);
 
 				{
 					DescriptorData params[1] = {};
 					params[0].pName = "UniformData";
 					params[0].ppBuffers = &pUniformBuffers[gFrameIndex];
 
-					cmdBindPipeline(cmd, firstPipeline.pPipeline);
+					cmdBindPipeline(cmd, RenderPasses[RenderPass::Offscreen]->pPipeline);
 					{
-						cmdBindDescriptors(cmd, pDescriptorBinder, firstPipeline.pRootSignature, 1, params);
+						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Offscreen]->pRootSignature, 1, params);
 						Buffer* pVertexBuffers[] = { sceneData.meshes[0]->pPositionStream };
 						cmdBindVertexBuffer(cmd, 1, pVertexBuffers, NULL);
 
@@ -473,31 +607,26 @@ public:
 					}
 				}
 
-				textureBarriers[0] = { pOffscreenRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
-				cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
+				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 			}
 			endCmd(cmd);
 		}
 
-		// Submit First Pass Command Buffer
 		queueSubmit(pGraphicsQueue, 1, &cmd, NULL, 1, &pImageAquiredSemaphore, 1, &pFirstPassFinishedSemaphore);
 
-		// Record Second Pass Command Buffer
-		cmd = ppCmds[gFrameIndex];
+		// Deffered Pass
+		cmd = RenderPasses[RenderPass::Deffered]->ppCmds[gFrameIndex];
 		{
 			RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
 
 			beginCmd(cmd);
 			{
-				cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
-
-				TextureBarrier textureBarriers[3] = {
+				TextureBarrier textureBarriers[2] = {
 					{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
-					{ pOffscreenRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
 					{ pDepthBuffer->pTexture, RESOURCE_STATE_SHADER_RESOURCE }
 				};
 
-				cmdResourceBarrier(cmd, 0, nullptr, 3, textureBarriers, false);
+				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers, false);
 
 				loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
 				cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
@@ -510,9 +639,9 @@ public:
 					params[0].pName = "depthBuffer";
 					params[0].ppTextures = &pDepthBuffer->pTexture;
 
-					cmdBindPipeline(cmd, secondPipeline.pPipeline);
+					cmdBindPipeline(cmd, RenderPasses[RenderPass::Deffered]->pPipeline);
 					{
-						cmdBindDescriptors(cmd, pDescriptorBinder, secondPipeline.pRootSignature, 1, params);
+						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Deffered]->pRootSignature, 1, params);
 
 						// Draw Fullscreen Quad
 						cmdDraw(cmd, 3, 0);
@@ -550,9 +679,8 @@ public:
 
 				textureBarriers[0] = { pSwapChainRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
 				cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
-
-				cmdEndGpuFrameProfile(cmd, pGpuProfiler);
 			}
+			cmdEndGpuFrameProfile(cmd, pGpuProfiler);
 			endCmd(cmd);
 		}
 
@@ -582,95 +710,98 @@ public:
 		return pSwapChain != NULL;
 	}
 
-	void createRenderTargets()
+	void CreateRenderTargets()
 	{
 		ClearValue colorClearBlack = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-		// Offscreen 
-		RenderTargetDesc rtDesc = {};
-		rtDesc.mClearValue = colorClearBlack;
-		rtDesc.mArraySize = 1;
-		rtDesc.mClearValue.depth = 1.0f;
-		rtDesc.mClearValue.stencil = 0.0f;
-		rtDesc.mFormat = ImageFormat::RGBA8;
-		rtDesc.mDepth = 1;
-		rtDesc.mWidth = mSettings.mWidth;
-		rtDesc.mHeight = mSettings.mHeight;
-		rtDesc.mSampleCount = SAMPLE_COUNT_1;
-		rtDesc.mSampleQuality = 0;
-		::addRenderTarget(pRenderer, &rtDesc, &pOffscreenRenderTarget);
+		// Offscreen Render Targets
+		{
+			RenderTarget* rendertarget;
+			RenderTargetDesc rtDesc = {};
+			rtDesc.mClearValue = colorClearBlack;
+			rtDesc.mArraySize = 1;
+			rtDesc.mClearValue.depth = 1.0f;
+			rtDesc.mClearValue.stencil = 0.0f;
+			rtDesc.mFormat = ImageFormat::RGBA8;
+			rtDesc.mDepth = 1;
+			rtDesc.mWidth = mSettings.mWidth;
+			rtDesc.mHeight = mSettings.mHeight;
+			rtDesc.mSampleCount = SAMPLE_COUNT_1;
+			rtDesc.mSampleQuality = 0;
+			::addRenderTarget(pRenderer, &rtDesc, &rendertarget);
+
+			RenderPasses[RenderPass::Offscreen]->RenderTargets.push_back(rendertarget);
+		}
 
 		// Depth Buffer
-		rtDesc.mArraySize = 1;
-		rtDesc.mClearValue.depth = 1.0f;
-		rtDesc.mClearValue.stencil = 0.0f;
-		rtDesc.mFormat = ImageFormat::D32F;
-		rtDesc.mDepth = 1;
-		rtDesc.mWidth = mSettings.mWidth;
-		rtDesc.mHeight = mSettings.mHeight;
-		rtDesc.mSampleCount = SAMPLE_COUNT_1;
-		rtDesc.mSampleQuality = 0;
-		::addRenderTarget(pRenderer, &rtDesc, &pDepthBuffer);
+		{
+			RenderTargetDesc rtDesc = {};
+			rtDesc.mArraySize = 1;
+			rtDesc.mClearValue.depth = 1.0f;
+			rtDesc.mClearValue.stencil = 0.0f;
+			rtDesc.mFormat = ImageFormat::D32F;
+			rtDesc.mDepth = 1;
+			rtDesc.mWidth = mSettings.mWidth;
+			rtDesc.mHeight = mSettings.mHeight;
+			rtDesc.mSampleCount = SAMPLE_COUNT_1;
+			rtDesc.mSampleQuality = 0;
+			::addRenderTarget(pRenderer, &rtDesc, &pDepthBuffer);
+		}
 	}
 
-	void addOffscreenPipeline()
+	void  CreatePipelines()
 	{
-		//layout and pipeline for sphere draw
-		VertexLayout vertexLayout = {};
-		vertexLayout.mAttribCount = 1;
+		// Offscreen
+		{
+			VertexLayout vertexLayout = {};
+			vertexLayout.mAttribCount = 1;
 
-		vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
-		vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
-		vertexLayout.mAttribs[0].mBinding = 0;
-		vertexLayout.mAttribs[0].mLocation = 0;
-		vertexLayout.mAttribs[0].mOffset = 0;
+			vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
+			vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
+			vertexLayout.mAttribs[0].mBinding = 0;
+			vertexLayout.mAttribs[0].mLocation = 0;
+			vertexLayout.mAttribs[0].mOffset = 0;
 
-		PipelineDesc desc = {};
-		desc.mType = PIPELINE_TYPE_GRAPHICS;
-		GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
-		pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
-		pipelineSettings.mRenderTargetCount = 1;
-		pipelineSettings.pDepthState = secondPipeline.pDepthState;
-		pipelineSettings.pColorFormats = &pOffscreenRenderTarget->mDesc.mFormat;
-		pipelineSettings.pSrgbValues = &pOffscreenRenderTarget->mDesc.mSrgb;
-		pipelineSettings.mSampleCount = pOffscreenRenderTarget->mDesc.mSampleCount;
-		pipelineSettings.mSampleQuality = pOffscreenRenderTarget->mDesc.mSampleQuality;
-		pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
-		pipelineSettings.pRootSignature = secondPipeline.pRootSignature;
-		pipelineSettings.pShaderProgram = secondPipeline.pShader;
-		pipelineSettings.pVertexLayout = &vertexLayout;
-		pipelineSettings.pRasterizerState = secondPipeline.pRastState;
-		addPipeline(pRenderer, &desc, &secondPipeline.pPipeline);
-	}
+			PipelineDesc desc = {};
+			desc.mType = PIPELINE_TYPE_GRAPHICS;
+			GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
+			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
+			pipelineSettings.mRenderTargetCount = 1;
+			pipelineSettings.pDepthState = pDepthDefault;
+			pipelineSettings.pColorFormats = &RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mFormat;
+			pipelineSettings.pSrgbValues = &RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mSrgb;
+			pipelineSettings.mSampleCount = RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mSampleCount;
+			pipelineSettings.mSampleQuality = RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mSampleQuality;
+			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
+			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Offscreen]->pRootSignature;
+			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::Offscreen]->pShader;
+			pipelineSettings.pVertexLayout = &vertexLayout;
+			pipelineSettings.pRasterizerState = pRasterDefault;
 
-	void addDefferedPipeline()
-	{
-		//layout and pipeline for sphere draw
-		VertexLayout vertexLayout = {};
-		vertexLayout.mAttribCount = 1;
+			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Offscreen]->pPipeline);
+		}
 
-		vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
-		vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
-		vertexLayout.mAttribs[0].mBinding = 0;
-		vertexLayout.mAttribs[0].mLocation = 0;
-		vertexLayout.mAttribs[0].mOffset = 0;
+		// Deffered
+		{
+			VertexLayout vertexLayout = {};
 
-		PipelineDesc desc = {};
-		desc.mType = PIPELINE_TYPE_GRAPHICS;
-		GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
-		pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
-		pipelineSettings.mRenderTargetCount = 1;
-		pipelineSettings.pDepthState = firstPipeline.pDepthState;
-		pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
-		pipelineSettings.pSrgbValues = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSrgb;
-		pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
-		pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
-		pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
-		pipelineSettings.pRootSignature = firstPipeline.pRootSignature;
-		pipelineSettings.pShaderProgram = firstPipeline.pShader;
-		pipelineSettings.pVertexLayout = &vertexLayout;
-		pipelineSettings.pRasterizerState = firstPipeline.pRastState;
-		addPipeline(pRenderer, &desc, &firstPipeline.pPipeline);
+			PipelineDesc desc = {};
+			desc.mType = PIPELINE_TYPE_GRAPHICS;
+			GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
+			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
+			pipelineSettings.mRenderTargetCount = 1;
+			pipelineSettings.pDepthState = pDepthNone;
+			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
+			pipelineSettings.pSrgbValues = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSrgb;
+			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
+			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
+			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Deffered]->pRootSignature;
+			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::Deffered]->pShader;
+			pipelineSettings.pVertexLayout = &vertexLayout;
+			pipelineSettings.pRasterizerState = pRasterDefault;
+
+			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Deffered]->pPipeline);
+		}
 	}
 
 	const char* GetName() { return "07_DefferedLighting"; }
