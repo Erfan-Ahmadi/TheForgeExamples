@@ -11,9 +11,17 @@
 #include "Common_3/Tools/AssimpImporter/AssimpImporter.h"
 #include "Common_3/OS/Interfaces/IMemory.h"
 
+constexpr size_t gDirectionalLights = 1;
+constexpr size_t gMaxDirectionalLights = 1;
+static_assert(gDirectionalLights <= gMaxDirectionalLights, "");
+
 constexpr size_t gPointLights = 1;
 constexpr size_t gMaxPointLights = 8;
 static_assert(gPointLights <= gMaxPointLights, "");
+
+constexpr size_t gSpotLights = 1;
+constexpr size_t gMaxSpotLights = 8;
+static_assert(gSpotLights <= gMaxSpotLights, "");
 
 const uint32_t	gImageCount = 3;
 
@@ -52,12 +60,26 @@ DepthState* pDepthNone = NULL;
 
 Buffer* pUniformBuffers[gImageCount] = { NULL };
 
+struct
+{
+	Texture* pTextureColor = NULL;
+	Texture* pTextureSpecular = NULL;
+} textures;
+
+const char* pTexturesFileNames[] =
+{
+	"lion/lion_albedo",
+	"lion/lion_specular"
+};
+
 //Enum for easy access of GBuffer RTs
 struct GBufferRT
 {
 	enum Enum
 	{
-		Albedo,
+		AlbedoSpecular,
+		Normal,
+		Position,
 		COUNT
 	};
 };
@@ -105,6 +127,81 @@ struct SceneData
 {
 	eastl::vector<MeshBatch*> meshes;
 } sceneData;
+
+struct DirectionalLight
+{
+#ifdef VULKAN
+	alignas(16) float3 direction;
+	alignas(16) float3 ambient;
+	alignas(16) float3 diffuse;
+	alignas(16) float3 specular;
+#elif DIRECT3D12
+	float3 direction;
+	float3 ambient;
+	float3 diffuse;
+	float3 specular;
+#endif
+};
+
+struct PointLight
+{
+#ifdef VULKAN
+	alignas(16) float3 position;
+	alignas(16) float3 ambient;
+	alignas(16) float3 diffuse;
+	alignas(16) float3 specular;
+	alignas(16) float3 attenuationParams;
+#elif DIRECT3D12
+	float3 position;
+	float3 ambient;
+	float3 diffuse;
+	float3 specular;
+	float3 attenuationParams;
+	float _pad0;
+#endif
+};
+
+struct SpotLight
+{
+#ifdef VULKAN
+	alignas(16) float3 position;
+	alignas(16) float3 direction;
+	alignas(16) float2 cutOffs;
+	alignas(16) float3 ambient;
+	alignas(16) float3 diffuse;
+	alignas(16) float3 specular;
+	alignas(16) float3 attenuationParams;
+#elif DIRECT3D12
+	float3 position;
+	float3 direction;
+	float2 cutOffs;
+	float3 ambient;
+	float3 diffuse;
+	float3 specular;
+	float3 attenuationParams;
+#endif
+};
+
+struct
+{
+	int numDirectionalLights;
+	int numPointLights;
+	int numSpotLights;
+	alignas(16) float3 viewPos;
+} lightData;
+
+DirectionalLight	directionalLights[gDirectionalLights];
+PointLight			pointLights[gPointLights];
+SpotLight			spotLights[gSpotLights];
+
+struct
+{
+	Buffer* pDirLightsBuffer = NULL;
+	Buffer* pPointLightsBuffer = NULL;
+	Buffer* pSpotLightsBuffer = NULL;
+} lightBuffers;
+
+Buffer* pLightBuffer = NULL;
 
 struct UniformBuffer
 {
@@ -225,6 +322,9 @@ public:
 				RootSignatureDesc rootDesc = {};
 				rootDesc.mShaderCount = 1;
 				rootDesc.ppShaders = &RenderPasses[RenderPass::GPass]->pShader;
+				rootDesc.mStaticSamplerCount = 1;
+				rootDesc.ppStaticSamplerNames = &samplerNames;
+				rootDesc.ppStaticSamplers = &pSampler;
 				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::GPass]->pRootSignature);
 			}
 
@@ -272,6 +372,8 @@ public:
 			finishResourceLoading();
 			return false;
 		}
+
+		CreateLightsBuffer();
 
 		finishResourceLoading();
 
@@ -508,14 +610,37 @@ public:
 		gOffscreenUniformBuffer.proj = projMat;
 
 		// Update Instance Data
-		gOffscreenUniformBuffer.pToWorld = mat4::translation(Vector3(0.0f, -1, 4 + currentTime)) *
+		gOffscreenUniformBuffer.pToWorld = mat4::translation(Vector3(0.0f, -1, 7)) *
 			mat4::rotationY(currentTime) *
-			mat4::scale(Vector3(1.5f));
+			mat4::scale(Vector3(0.1f));
 
 		viewMat.setTranslation(vec3(0));
 
-		// ProfileSetDisplayMode()
-		// TODO: need to change this better way 
+
+		directionalLights[0].direction = float3{ 0.0f, -1.0f, 0.0f };
+		directionalLights[0].ambient = float3{ 0.05f, 0.05f, 0.05f };
+		directionalLights[0].diffuse = float3{ 0.5f, 0.5f, 0.5f };
+		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };
+		lightData.numDirectionalLights = gDirectionalLights;
+
+		pointLights[0].position = float3{ -4.0f, 4.0f, 5.0f };
+		pointLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
+		pointLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
+		pointLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
+		pointLights[0].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
+		lightData.numPointLights = gPointLights;
+
+		spotLights[0].position = float3{ 4.0f * sin(currentTime), 0.0f, 0.0f };
+		spotLights[0].direction = float3{ -0.5f, 0.0f, 1.0f };
+		spotLights[0].cutOffs = float2{ cos(PI / 9), cos(PI / 6) };
+		spotLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
+		spotLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
+		spotLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
+		spotLights[0].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
+		lightData.numSpotLights = gSpotLights;
+
+		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
+
 		if (gMicroProfiler != bPrevToggleMicroProfiler)
 		{
 			Profile& S = *ProfileGet();
@@ -542,6 +667,19 @@ public:
 		// Update uniform buffers
 		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &gOffscreenUniformBuffer };
 		updateResource(&viewProjCbv);
+		
+		// Update light uniform buffers
+		BufferUpdateDesc lightBuffUpdate = { pLightBuffer, &lightData };
+		updateResource(&lightBuffUpdate);
+
+		BufferUpdateDesc pointLightBuffUpdate = { lightBuffers.pPointLightsBuffer, &pointLights };
+		updateResource(&pointLightBuffUpdate);
+
+		BufferUpdateDesc dirLightBuffUpdate = { lightBuffers.pDirLightsBuffer, &directionalLights };
+		updateResource(&dirLightBuffUpdate);
+
+		BufferUpdateDesc spotLightBuffUpdate = { lightBuffers.pSpotLightsBuffer, &spotLights };
+		updateResource(&spotLightBuffUpdate);
 
 		// Load Actions
 		LoadActionsDesc loadActions = {};
@@ -601,15 +739,19 @@ public:
 					RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mHeight);
 
 				{
-					DescriptorData params[1] = {};
-					params[0].pName = "UniformData";
-					params[0].ppBuffers = &pUniformBuffers[gFrameIndex];
+					DescriptorData params[3] = {};
+					params[0].pName = "Texture";
+					params[0].ppTextures = &textures.pTextureColor;
+					params[1].pName = "TextureSpecular";
+					params[1].ppTextures = &textures.pTextureSpecular;
+					params[2].pName = "UniformData";
+					params[2].ppBuffers = &pUniformBuffers[gFrameIndex];
 
 					cmdBindPipeline(cmd, RenderPasses[RenderPass::GPass]->pPipeline);
 					{
-						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::GPass]->pRootSignature, 1, params);
-						Buffer* pVertexBuffers[] = { sceneData.meshes[0]->pPositionStream };
-						cmdBindVertexBuffer(cmd, 1, pVertexBuffers, NULL);
+						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::GPass]->pRootSignature, 3, params);
+						Buffer* pVertexBuffers[] = { sceneData.meshes[0]->pPositionStream, sceneData.meshes[0]->pNormalStream, sceneData.meshes[0]->pUVStream };
+						cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
 
 						cmdBindIndexBuffer(cmd, sceneData.meshes[0]->pIndicesStream, 0);
 
@@ -633,9 +775,11 @@ public:
 			{
 				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Deffered Pass", true);
 
-				TextureBarrier textureBarriers[3] = {
+				TextureBarrier textureBarriers[5] = {
 					{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
-					{ RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::Albedo]->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
+					{ RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::AlbedoSpecular]->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
+					{ RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::Normal]->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
+					{ RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::Position]->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
 					{ pDepthBuffer->pTexture, RESOURCE_STATE_SHADER_RESOURCE }
 				};
 
@@ -647,21 +791,33 @@ public:
 				cmdSetScissor(cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth, pSwapChainRenderTarget->mDesc.mHeight);
 
 				{
-					DescriptorData params[2] = {};
+					DescriptorData params[8] = {};
 					params[0].pName = "depthBuffer";
 					params[0].ppTextures = &pDepthBuffer->pTexture;
-					params[1].pName = "albedo";
-					params[1].ppTextures = &RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::Albedo]->pTexture;
+					params[1].pName = "albedoSpec";
+					params[1].ppTextures = &RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::AlbedoSpecular]->pTexture;
+					params[2].pName = "normal";
+					params[2].ppTextures = &RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::Normal]->pTexture;
+					params[3].pName = "position";
+					params[3].ppTextures = &RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::Position]->pTexture;
+					params[4].pName = "LightData";
+					params[4].ppBuffers = &pLightBuffer;
+					params[5].pName = "DirectionalLights";
+					params[5].ppBuffers = &lightBuffers.pDirLightsBuffer;
+					params[6].pName = "PointLights";
+					params[6].ppBuffers = &lightBuffers.pPointLightsBuffer;
+					params[7].pName = "SpotLights";
+					params[7].ppBuffers = &lightBuffers.pSpotLightsBuffer;
 
 					cmdBindPipeline(cmd, RenderPasses[RenderPass::Deffered]->pPipeline);
 					{
-						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Deffered]->pRootSignature, 2, params);
+						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Deffered]->pRootSignature, 8, params);
 
 						// Draw Fullscreen Quad
 						cmdDraw(cmd, 3, 0);
 					}
 				}
-				
+
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
 				loadActions = {};
@@ -735,14 +891,25 @@ public:
 			RenderTargetDesc rtDesc = {};
 			rtDesc.mClearValue = colorClearBlack;
 			rtDesc.mArraySize = 1;
-			rtDesc.mFormat = ImageFormat::RGBA8;
 			rtDesc.mDepth = 1;
 			rtDesc.mWidth = mSettings.mWidth;
 			rtDesc.mHeight = mSettings.mHeight;
 			rtDesc.mSampleCount = SAMPLE_COUNT_1;
 			rtDesc.mSampleQuality = 0;
-			::addRenderTarget(pRenderer, &rtDesc, &rendertarget);
 
+			// Color + Specular
+			rtDesc.mFormat = ImageFormat::RGBA8;
+			::addRenderTarget(pRenderer, &rtDesc, &rendertarget);
+			RenderPasses[RenderPass::GPass]->RenderTargets.push_back(rendertarget);
+
+			// Normal
+			rtDesc.mFormat = ImageFormat::RGBA8S;
+			::addRenderTarget(pRenderer, &rtDesc, &rendertarget);
+			RenderPasses[RenderPass::GPass]->RenderTargets.push_back(rendertarget);
+
+			// Position
+			rtDesc.mFormat = ImageFormat::RGBA8S;
+			::addRenderTarget(pRenderer, &rtDesc, &rendertarget);
 			RenderPasses[RenderPass::GPass]->RenderTargets.push_back(rendertarget);
 		}
 
@@ -766,8 +933,9 @@ public:
 	{
 		// Offscreen
 		{
+
 			VertexLayout vertexLayout = {};
-			vertexLayout.mAttribCount = 1;
+			vertexLayout.mAttribCount = 3;
 
 			vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
 			vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
@@ -775,14 +943,35 @@ public:
 			vertexLayout.mAttribs[0].mLocation = 0;
 			vertexLayout.mAttribs[0].mOffset = 0;
 
+			vertexLayout.mAttribs[1].mSemantic = SEMANTIC_NORMAL;
+			vertexLayout.mAttribs[1].mFormat = ImageFormat::RGB32F;
+			vertexLayout.mAttribs[1].mBinding = 1;
+			vertexLayout.mAttribs[1].mLocation = 1;
+			vertexLayout.mAttribs[1].mOffset = 0;
+
+			vertexLayout.mAttribs[2].mSemantic = SEMANTIC_TEXCOORD0;
+			vertexLayout.mAttribs[2].mFormat = ImageFormat::RG32F;
+			vertexLayout.mAttribs[2].mBinding = 2;
+			vertexLayout.mAttribs[2].mLocation = 2;
+			vertexLayout.mAttribs[2].mOffset = 0;
+
+			//set up g-prepass buffer formats
+			ImageFormat::Enum deferredFormats[GBufferRT::COUNT] = {};
+			bool              deferredSrgb[GBufferRT::COUNT] = {};
+			for (uint32_t i = 0; i < GBufferRT::COUNT; ++i)
+			{
+				deferredFormats[i] = RenderPasses[RenderPass::GPass]->RenderTargets[i]->mDesc.mFormat;
+				deferredSrgb[i] = false;
+			}
+
 			PipelineDesc desc = {};
 			desc.mType = PIPELINE_TYPE_GRAPHICS;
 			GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
 			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
-			pipelineSettings.mRenderTargetCount = 1;
+			pipelineSettings.mRenderTargetCount = 3;
 			pipelineSettings.pDepthState = pDepthDefault;
-			pipelineSettings.pColorFormats = &RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mFormat;
-			pipelineSettings.pSrgbValues = &RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mSrgb;
+			pipelineSettings.pColorFormats = deferredFormats;
+			pipelineSettings.pSrgbValues = deferredSrgb;
 			pipelineSettings.mSampleCount = RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mSampleCount;
 			pipelineSettings.mSampleQuality = RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mSampleQuality;
 			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
@@ -835,12 +1024,78 @@ public:
 		pCameraController->lookAt(lookAt);
 	}
 
+	void CreateLightsBuffer()
+	{
+		BufferLoadDesc bufferDesc = {};
+
+		// Light Uniform Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mSize = sizeof(lightData);
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+		bufferDesc.pData = NULL;
+		bufferDesc.ppBuffer = &pLightBuffer;
+		addResource(&bufferDesc);
+
+		// DirLights Structured Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
+		bufferDesc.mDesc.mFirstElement = 0;
+		bufferDesc.mDesc.mElementCount = gDirectionalLights;
+		bufferDesc.mDesc.mStructStride = sizeof(DirectionalLight);
+		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
+		bufferDesc.pData = NULL;
+		bufferDesc.ppBuffer = &lightBuffers.pDirLightsBuffer;
+		addResource(&bufferDesc);
+
+		// PointLights Structured Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
+		bufferDesc.mDesc.mFirstElement = 0;
+		bufferDesc.mDesc.mElementCount = gPointLights;
+		bufferDesc.mDesc.mStructStride = sizeof(PointLight);
+		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
+		bufferDesc.pData = NULL;
+		bufferDesc.ppBuffer = &lightBuffers.pPointLightsBuffer;
+		addResource(&bufferDesc);
+
+		// SpotLights Structured Buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+		bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_NONE;
+		bufferDesc.mDesc.mFirstElement = 0;
+		bufferDesc.mDesc.mElementCount = gSpotLights;
+		bufferDesc.mDesc.mStructStride = sizeof(SpotLight);
+		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mStructStride * bufferDesc.mDesc.mElementCount;
+		bufferDesc.pData = NULL;
+		bufferDesc.ppBuffer = &lightBuffers.pSpotLightsBuffer;
+		addResource(&bufferDesc);
+	}
+
 	bool LoadModels()
 	{
+		// Main Texture
+		TextureLoadDesc textureDesc = {};
+		textureDesc.mRoot = FSR_Textures;
+		textureDesc.pFilename = pTexturesFileNames[0];
+		textureDesc.ppTexture = &textures.pTextureColor;
+		addResource(&textureDesc, true);
+
+		// Specular Texture
+		textureDesc.pFilename = pTexturesFileNames[1];
+		textureDesc.ppTexture = &textures.pTextureSpecular;
+		addResource(&textureDesc, true);
+
 		AssimpImporter importer;
 
 		AssimpImporter::Model model;
-		if (!importer.ImportModel("../../../../art/Meshes/bunny.obj", &model))
+		if (!importer.ImportModel("../../../../art/Meshes/lion.obj", &model))
 		{
 			return false;
 		}

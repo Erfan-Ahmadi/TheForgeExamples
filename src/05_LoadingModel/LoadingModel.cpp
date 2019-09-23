@@ -45,8 +45,8 @@ Pipeline* pGraphicsPipeline = NULL;
 RootSignature* pRootSignature = NULL;
 
 Shader* pModelShader = NULL;
-Texture* pTexture = NULL;
-Texture* pSpecularTexture = NULL;
+Texture* pTextureColor = NULL;
+Texture* pTextureSpecular = NULL;
 Pipeline* pModelPipeline = NULL;
 Pipeline* pModelPipeline2 = NULL;
 
@@ -325,8 +325,8 @@ public:
 		removeResource(pDirLightsBuffer);
 		removeResource(pSpotLightsBuffer);
 
-		removeResource(pTexture);
-		removeResource(pSpecularTexture);
+		removeResource(pTextureColor);
+		removeResource(pTextureSpecular);
 
 		for (size_t i = 0; i < sceneData.meshes.size(); ++i)
 		{
@@ -532,9 +532,9 @@ public:
 
 			DescriptorData params[7] = {};
 			params[0].pName = "Texture";
-			params[0].ppTextures = &pTexture;
+			params[0].ppTextures = &pTextureColor;
 			params[1].pName = "TextureSpecular";
-			params[1].ppTextures = &pSpecularTexture;
+			params[1].ppTextures = &pTextureSpecular;
 			params[2].pName = "UniformData";
 			params[2].ppBuffers = &pUniformBuffers[gFrameIndex];
 			params[3].pName = "LightData";
@@ -678,12 +678,12 @@ public:
 		TextureLoadDesc textureDesc = {};
 		textureDesc.mRoot = FSR_Textures;
 		textureDesc.pFilename = pTexturesFileNames[0];
-		textureDesc.ppTexture = &pTexture;
+		textureDesc.ppTexture = &pTextureColor;
 		addResource(&textureDesc, true);
 
 		// Specular Texture
 		textureDesc.pFilename = pTexturesFileNames[1];
-		textureDesc.ppTexture = &pSpecularTexture;
+		textureDesc.ppTexture = &pTextureSpecular;
 		addResource(&textureDesc, true);
 
 		AssimpImporter importer;
