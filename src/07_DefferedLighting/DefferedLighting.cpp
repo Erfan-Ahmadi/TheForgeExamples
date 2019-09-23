@@ -52,6 +52,16 @@ DepthState* pDepthNone = NULL;
 
 Buffer* pUniformBuffers[gImageCount] = { NULL };
 
+//Enum for easy access of GBuffer RTs
+struct GBufferRT
+{
+	enum Enum
+	{
+		Albedo,
+		COUNT
+	};
+};
+
 class RenderPassData
 {
 public:
@@ -75,7 +85,7 @@ struct RenderPass
 {
 	enum Enum
 	{
-		Offscreen,
+		GPass,
 		Deffered
 	};
 };
@@ -144,7 +154,7 @@ public:
 		//Gbuffer pass
 		RenderPassData* pass =
 			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), pRenderer, pGraphicsQueue, gImageCount);
-		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Offscreen, pass));
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::GPass, pass));
 
 		//Shadow pass
 		pass =
@@ -171,7 +181,7 @@ public:
 		ShaderLoadDesc shaderDesc = {};
 		shaderDesc.mStages[0] = { "offscreen.vert", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[1] = { "offscreen.frag", NULL, 0, FSR_SrcShaders };
-		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Offscreen]->pShader);
+		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::GPass]->pShader);
 		shaderDesc.mStages[0] = { "deffered.vert", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[1] = { "deffered.frag", NULL, 0, FSR_SrcShaders };
 		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Deffered]->pShader);
@@ -214,8 +224,8 @@ public:
 			{
 				RootSignatureDesc rootDesc = {};
 				rootDesc.mShaderCount = 1;
-				rootDesc.ppShaders = &RenderPasses[RenderPass::Offscreen]->pShader;
-				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Offscreen]->pRootSignature);
+				rootDesc.ppShaders = &RenderPasses[RenderPass::GPass]->pShader;
+				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::GPass]->pRootSignature);
 			}
 
 			// Root Signature for Deffered Pipeline
@@ -232,7 +242,7 @@ public:
 
 		DescriptorBinderDesc descriptorBinderDescs[2] =
 		{
-			{ RenderPasses[RenderPass::Offscreen]->pRootSignature },
+			{ RenderPasses[RenderPass::GPass]->pRootSignature },
 			{ RenderPasses[RenderPass::Deffered]->pRootSignature }
 		};
 
@@ -545,19 +555,19 @@ public:
 		loadActions.mClearDepth.stencil = 0;
 
 		// Offscreen Pass
-		Cmd* cmd = RenderPasses[RenderPass::Offscreen]->ppCmds[gFrameIndex];
+		Cmd* cmd = RenderPasses[RenderPass::GPass]->ppCmds[gFrameIndex];
 		{
 			beginCmd(cmd);
 			cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
 			{
 				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Offscreen Pass", true);
 
-				//Clear G-buffers and Depth buffer
+				// Clear G-buffers and Depth buffer
 				LoadActionsDesc loadActions = {};
-				for (uint32_t i = 0; i < RenderPasses[RenderPass::Offscreen]->RenderTargets.size(); ++i)
+				for (uint32_t i = 0; i < RenderPasses[RenderPass::GPass]->RenderTargets.size(); ++i)
 				{
 					loadActions.mLoadActionsColor[i] = LOAD_ACTION_CLEAR;
-					loadActions.mClearColorValues[i] = RenderPasses[RenderPass::Offscreen]->RenderTargets[i]->mDesc.mClearValue;
+					loadActions.mClearColorValues[i] = RenderPasses[RenderPass::GPass]->RenderTargets[i]->mDesc.mClearValue;
 				}
 
 				// Clear depth to the far plane and stencil to 0
@@ -566,9 +576,9 @@ public:
 
 				// Transfer G-buffers to render target state for each buffer
 				TextureBarrier barrier;
-				for (uint32_t i = 0; i < RenderPasses[RenderPass::Offscreen]->RenderTargets.size(); ++i)
+				for (uint32_t i = 0; i < RenderPasses[RenderPass::GPass]->RenderTargets.size(); ++i)
 				{
-					barrier = { RenderPasses[RenderPass::Offscreen]->RenderTargets[i]->pTexture, RESOURCE_STATE_RENDER_TARGET };
+					barrier = { RenderPasses[RenderPass::GPass]->RenderTargets[i]->pTexture, RESOURCE_STATE_RENDER_TARGET };
 					cmdResourceBarrier(cmd, 0, NULL, 1, &barrier, false);
 				}
 
@@ -578,26 +588,26 @@ public:
 
 				cmdBindRenderTargets(
 					cmd,
-					(uint32_t)RenderPasses[RenderPass::Offscreen]->RenderTargets.size(),
-					RenderPasses[RenderPass::Offscreen]->RenderTargets.data(),
+					(uint32_t)RenderPasses[RenderPass::GPass]->RenderTargets.size(),
+					RenderPasses[RenderPass::GPass]->RenderTargets.data(),
 					pDepthBuffer,
 					&loadActions, NULL, NULL, -1, -1);
 
 				cmdSetViewport(
-					cmd, 0.0f, 0.0f, (float)RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mWidth,
-					(float)RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mHeight, 0.0f, 1.0f);
+					cmd, 0.0f, 0.0f, (float)RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mWidth,
+					(float)RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mHeight, 0.0f, 1.0f);
 				cmdSetScissor(
-					cmd, 0, 0, RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mWidth,
-					RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mHeight);
+					cmd, 0, 0, RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mWidth,
+					RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mHeight);
 
 				{
 					DescriptorData params[1] = {};
 					params[0].pName = "UniformData";
 					params[0].ppBuffers = &pUniformBuffers[gFrameIndex];
 
-					cmdBindPipeline(cmd, RenderPasses[RenderPass::Offscreen]->pPipeline);
+					cmdBindPipeline(cmd, RenderPasses[RenderPass::GPass]->pPipeline);
 					{
-						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Offscreen]->pRootSignature, 1, params);
+						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::GPass]->pRootSignature, 1, params);
 						Buffer* pVertexBuffers[] = { sceneData.meshes[0]->pPositionStream };
 						cmdBindVertexBuffer(cmd, 1, pVertexBuffers, NULL);
 
@@ -621,32 +631,37 @@ public:
 
 			beginCmd(cmd);
 			{
-				TextureBarrier textureBarriers[2] = {
+				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Deffered Pass", true);
+
+				TextureBarrier textureBarriers[3] = {
 					{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+					{ RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::Albedo]->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
 					{ pDepthBuffer->pTexture, RESOURCE_STATE_SHADER_RESOURCE }
 				};
 
-				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers, false);
+				cmdResourceBarrier(cmd, 0, nullptr, 3, textureBarriers, false);
 
 				loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
 				cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
 				cmdSetViewport(cmd, 0.0f, 0.0f, (float)pSwapChainRenderTarget->mDesc.mWidth, (float)pSwapChainRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
 				cmdSetScissor(cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth, pSwapChainRenderTarget->mDesc.mHeight);
 
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw Scene", true);
 				{
-					DescriptorData params[1] = {};
+					DescriptorData params[2] = {};
 					params[0].pName = "depthBuffer";
 					params[0].ppTextures = &pDepthBuffer->pTexture;
+					params[1].pName = "albedo";
+					params[1].ppTextures = &RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::Albedo]->pTexture;
 
 					cmdBindPipeline(cmd, RenderPasses[RenderPass::Deffered]->pPipeline);
 					{
-						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Deffered]->pRootSignature, 1, params);
+						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Deffered]->pRootSignature, 2, params);
 
 						// Draw Fullscreen Quad
 						cmdDraw(cmd, 3, 0);
 					}
 				}
+				
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
 				loadActions = {};
@@ -720,8 +735,6 @@ public:
 			RenderTargetDesc rtDesc = {};
 			rtDesc.mClearValue = colorClearBlack;
 			rtDesc.mArraySize = 1;
-			rtDesc.mClearValue.depth = 1.0f;
-			rtDesc.mClearValue.stencil = 0.0f;
 			rtDesc.mFormat = ImageFormat::RGBA8;
 			rtDesc.mDepth = 1;
 			rtDesc.mWidth = mSettings.mWidth;
@@ -730,7 +743,7 @@ public:
 			rtDesc.mSampleQuality = 0;
 			::addRenderTarget(pRenderer, &rtDesc, &rendertarget);
 
-			RenderPasses[RenderPass::Offscreen]->RenderTargets.push_back(rendertarget);
+			RenderPasses[RenderPass::GPass]->RenderTargets.push_back(rendertarget);
 		}
 
 		// Depth Buffer
@@ -749,7 +762,7 @@ public:
 		}
 	}
 
-	void  CreatePipelines()
+	void CreatePipelines()
 	{
 		// Offscreen
 		{
@@ -768,17 +781,17 @@ public:
 			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
 			pipelineSettings.mRenderTargetCount = 1;
 			pipelineSettings.pDepthState = pDepthDefault;
-			pipelineSettings.pColorFormats = &RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mFormat;
-			pipelineSettings.pSrgbValues = &RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mSrgb;
-			pipelineSettings.mSampleCount = RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mSampleCount;
-			pipelineSettings.mSampleQuality = RenderPasses[RenderPass::Offscreen]->RenderTargets[0]->mDesc.mSampleQuality;
+			pipelineSettings.pColorFormats = &RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mFormat;
+			pipelineSettings.pSrgbValues = &RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mSrgb;
+			pipelineSettings.mSampleCount = RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mSampleCount;
+			pipelineSettings.mSampleQuality = RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mSampleQuality;
 			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
-			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Offscreen]->pRootSignature;
-			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::Offscreen]->pShader;
+			pipelineSettings.pRootSignature = RenderPasses[RenderPass::GPass]->pRootSignature;
+			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::GPass]->pShader;
 			pipelineSettings.pVertexLayout = &vertexLayout;
 			pipelineSettings.pRasterizerState = pRasterDefault;
 
-			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Offscreen]->pPipeline);
+			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::GPass]->pPipeline);
 		}
 
 		// Deffered
