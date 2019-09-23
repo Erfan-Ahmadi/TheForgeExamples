@@ -66,7 +66,6 @@ float3 calculateSpotLight(SpotLight spotLight, float3 normal, float3 viewDir, fl
 
 float4 main(VSOutput input) : SV_TARGET
 {
-	return float4(0, 1, 0, 1);
 	float depth = getDepthValue(input.TexCoord);
 
 	//return float4(depth, depth, depth, 1);

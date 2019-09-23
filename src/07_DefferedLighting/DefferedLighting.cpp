@@ -1047,9 +1047,9 @@ public:
 
 			vertexLayout.mAttribs[1].mSemantic = SEMANTIC_TEXCOORD0;
 			vertexLayout.mAttribs[1].mFormat = ImageFormat::RG32F;
-			vertexLayout.mAttribs[1].mBinding = 1;
+			vertexLayout.mAttribs[1].mBinding = 0;
 			vertexLayout.mAttribs[1].mLocation = 1;
-			vertexLayout.mAttribs[1].mOffset = 0;
+			vertexLayout.mAttribs[1].mOffset = sizeof(float) * 3;
 
 			PipelineDesc desc = {};
 			desc.mType = PIPELINE_TYPE_GRAPHICS;
@@ -1102,10 +1102,10 @@ public:
 		for (uint32_t i = 0; i < 3; i++)
 		{
 			// Last component of uv is used for debug display sampler index
-			vertexBuffer.push_back({ { x + 1.0f,		y + 1.0f,		(float)i	}, { 1.0f, 1.0f } });
-			vertexBuffer.push_back({ { x - 1.0f,		y + 1.0f,		(float)i	}, { 0.0f, 1.0f} });
-			vertexBuffer.push_back({ { x - 1.0f,		y - 1.0f,		(float)i	}, { 0.0f, 0.0f} });
-			vertexBuffer.push_back({ { x + 1.0f,		y - 1.0f,		(float)i	}, { 1.0f, 0.0f } });
+			vertexBuffer.push_back({ { x + 1.0f,		y + 1.0f,		(float)i	}, { 1.0f, 0.0f } });
+			vertexBuffer.push_back({ { x - 1.0f,		y + 1.0f,		(float)i	}, { 0.0f, 0.0f} });
+			vertexBuffer.push_back({ { x - 1.0f,		y - 1.0f,		(float)i	}, { 0.0f, 1.0f} });
+			vertexBuffer.push_back({ { x + 1.0f,		y - 1.0f,		(float)i	}, { 1.0f, 1.0f } });
 			x += 1.0f;
 			if (x > 1.0f)
 			{
