@@ -58,8 +58,6 @@ RasterizerState* pRasterDefault = NULL;
 DepthState* pDepthDefault = NULL;
 DepthState* pDepthNone = NULL;
 
-Buffer* pUniformBuffers[gImageCount] = { NULL };
-
 struct
 {
 	Texture* pTextureColor = NULL;
@@ -201,17 +199,34 @@ struct
 	Buffer* pSpotLightsBuffer = NULL;
 } lightBuffers;
 
+struct
+{
+	Buffer* vertexBuffer;
+	Buffer* indexBuffer;
+	size_t indexCount;
+	size_t vertexCount;
+} quads;
+
 Buffer* pLightBuffer = NULL;
 
-struct UniformBuffer
+struct
 {
 	mat4	view;
 	mat4	proj;
 	mat4	pToWorld;
-};
+} gOffscreenUniformData;
+
+Buffer* pOffscreenUBOs[gImageCount] = { NULL };
+
+bool debugDisplay = 1.0f;
+struct
+{
+	mat4 proj;
+} gDefferedUniformData;
+
+Buffer* pDefferedUBOs[gImageCount] = { NULL };
 
 RenderPassMap	RenderPasses;
-UniformBuffer	gOffscreenUniformBuffer;
 
 const char* pszBases[FSR_Count] = {
 	"../../../../src/Shaders/bin",													// FSR_BinShaders
@@ -350,30 +365,50 @@ public:
 
 		// Create Uniform Buffers
 		{
-			BufferLoadDesc bufferDesc = {};
+			// Offscreen
 
-			// Uniform Buffer
-			bufferDesc = {};
-			bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-			bufferDesc.mDesc.mSize = sizeof(UniformBuffer);
-			bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
-			bufferDesc.pData = NULL;
-
-			for (uint32_t i = 0; i < gImageCount; ++i)
 			{
-				bufferDesc.ppBuffer = &pUniformBuffers[i];
-				addResource(&bufferDesc);
+				BufferLoadDesc bufferDesc = {};
+				bufferDesc = {};
+				bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+				bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+				bufferDesc.mDesc.mSize = sizeof(gOffscreenUniformData);
+				bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+				bufferDesc.pData = NULL;
+
+				for (uint32_t i = 0; i < gImageCount; ++i)
+				{
+					bufferDesc.ppBuffer = &pOffscreenUBOs[i];
+					addResource(&bufferDesc);
+				}
+			}
+
+			// Deffered
+			{
+				BufferLoadDesc bufferDesc = {};
+				bufferDesc = {};
+				bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+				bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+				bufferDesc.mDesc.mSize = sizeof(gDefferedUniformData);
+				bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+				bufferDesc.pData = NULL;
+
+				for (uint32_t i = 0; i < gImageCount; ++i)
+				{
+					bufferDesc.ppBuffer = &pDefferedUBOs[i];
+					addResource(&bufferDesc);
+				}
 			}
 		}
+
+		CreateLightsBuffer();
+		GenerateQuads();
 
 		if (!LoadModels())
 		{
 			finishResourceLoading();
 			return false;
 		}
-
-		CreateLightsBuffer();
 
 		finishResourceLoading();
 
@@ -465,7 +500,7 @@ public:
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
-			removeResource(pUniformBuffers[i]);
+			removeResource(pOffscreenUBOs[i]);
 		}
 
 		//Delete rendering passes
@@ -606,11 +641,11 @@ public:
 		const float horizontal_fov = PI / 2.0f;
 		mat4        projMat = mat4::perspective(horizontal_fov, aspectInverse, 0.1f, 1000.0f);
 
-		gOffscreenUniformBuffer.view = viewMat;
-		gOffscreenUniformBuffer.proj = projMat;
+		gOffscreenUniformData.view = viewMat;
+		gOffscreenUniformData.proj = projMat;
 
 		// Update Instance Data
-		gOffscreenUniformBuffer.pToWorld = mat4::translation(Vector3(0.0f, -1, 7)) *
+		gOffscreenUniformData.pToWorld = mat4::translation(Vector3(0.0f, -1, 7)) *
 			mat4::rotationY(currentTime) *
 			mat4::scale(Vector3(0.1f));
 
@@ -641,6 +676,15 @@ public:
 
 		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
 
+		if (debugDisplay)
+		{
+			gDefferedUniformData.proj = mat4::orthographic(0.0f, 2.0f, 0.0f, 2.0f, -1.0f, 1.0f);
+		}
+		else
+		{
+			gDefferedUniformData.proj = mat4::orthographic(0.0f, 1.0f, 0.0f, 1.0f, -1.0f, 1.0f);
+		}
+
 		if (gMicroProfiler != bPrevToggleMicroProfiler)
 		{
 			Profile& S = *ProfileGet();
@@ -665,9 +709,11 @@ public:
 		Fence* pRenderCompleteFence = pRenderCompleteFences[gFrameIndex];
 
 		// Update uniform buffers
-		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &gOffscreenUniformBuffer };
+		BufferUpdateDesc viewProjCbv = { pOffscreenUBOs[gFrameIndex], &gOffscreenUniformData };
 		updateResource(&viewProjCbv);
-		
+		viewProjCbv = { pDefferedUBOs[gFrameIndex], &gDefferedUniformData };
+		updateResource(&viewProjCbv);
+
 		// Update light uniform buffers
 		BufferUpdateDesc lightBuffUpdate = { pLightBuffer, &lightData };
 		updateResource(&lightBuffUpdate);
@@ -745,7 +791,7 @@ public:
 					params[1].pName = "TextureSpecular";
 					params[1].ppTextures = &textures.pTextureSpecular;
 					params[2].pName = "UniformData";
-					params[2].ppBuffers = &pUniformBuffers[gFrameIndex];
+					params[2].ppBuffers = &pOffscreenUBOs[gFrameIndex];
 
 					cmdBindPipeline(cmd, RenderPasses[RenderPass::GPass]->pPipeline);
 					{
@@ -791,7 +837,7 @@ public:
 				cmdSetScissor(cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth, pSwapChainRenderTarget->mDesc.mHeight);
 
 				{
-					DescriptorData params[8] = {};
+					DescriptorData params[9] = {};
 					params[0].pName = "depthBuffer";
 					params[0].ppTextures = &pDepthBuffer->pTexture;
 					params[1].pName = "albedoSpec";
@@ -808,13 +854,19 @@ public:
 					params[6].ppBuffers = &lightBuffers.pPointLightsBuffer;
 					params[7].pName = "SpotLights";
 					params[7].ppBuffers = &lightBuffers.pSpotLightsBuffer;
+					params[8].pName = "uniformData";
+					params[8].ppBuffers = &pDefferedUBOs[gFrameIndex];
 
 					cmdBindPipeline(cmd, RenderPasses[RenderPass::Deffered]->pPipeline);
 					{
-						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Deffered]->pRootSignature, 8, params);
+						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Deffered]->pRootSignature, 9, params);
+
+						Buffer* pVertexBuffers[] = { quads.vertexBuffer };
+						cmdBindVertexBuffer(cmd, 1, pVertexBuffers, NULL);
+						cmdBindIndexBuffer(cmd, quads.indexBuffer, 0);
 
 						// Draw Fullscreen Quad
-						cmdDraw(cmd, 3, 0);
+						cmdDrawIndexed(cmd, 6, 0, 0);
 					}
 				}
 
@@ -933,7 +985,6 @@ public:
 	{
 		// Offscreen
 		{
-
 			VertexLayout vertexLayout = {};
 			vertexLayout.mAttribCount = 3;
 
@@ -986,6 +1037,19 @@ public:
 		// Deffered
 		{
 			VertexLayout vertexLayout = {};
+			vertexLayout.mAttribCount = 2;
+
+			vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
+			vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
+			vertexLayout.mAttribs[0].mBinding = 0;
+			vertexLayout.mAttribs[0].mLocation = 0;
+			vertexLayout.mAttribs[0].mOffset = 0;
+
+			vertexLayout.mAttribs[1].mSemantic = SEMANTIC_TEXCOORD0;
+			vertexLayout.mAttribs[1].mFormat = ImageFormat::RG32F;
+			vertexLayout.mAttribs[1].mBinding = 1;
+			vertexLayout.mAttribs[1].mLocation = 1;
+			vertexLayout.mAttribs[1].mOffset = 0;
 
 			PipelineDesc desc = {};
 			desc.mType = PIPELINE_TYPE_GRAPHICS;
@@ -1022,6 +1086,75 @@ public:
 		p = d + lookAt;
 		pCameraController->moveTo(p);
 		pCameraController->lookAt(lookAt);
+	}
+
+	void GenerateQuads()
+	{
+		// Vertex Buffer
+		struct Vertex {
+			float pos[3];
+			float uv[2];
+		};
+
+		eastl::vector<Vertex> vertexBuffer;
+		float x = 0.0f;
+		float y = 0.0f;
+		for (uint32_t i = 0; i < 3; i++)
+		{
+			// Last component of uv is used for debug display sampler index
+			vertexBuffer.push_back({ { x + 1.0f,		y + 1.0f,		(float)i	}, { 1.0f, 1.0f } });
+			vertexBuffer.push_back({ { x - 1.0f,		y + 1.0f,		(float)i	}, { 0.0f, 1.0f} });
+			vertexBuffer.push_back({ { x - 1.0f,		y - 1.0f,		(float)i	}, { 0.0f, 0.0f} });
+			vertexBuffer.push_back({ { x + 1.0f,		y - 1.0f,		(float)i	}, { 1.0f, 0.0f } });
+			x += 1.0f;
+			if (x > 1.0f)
+			{
+				x = 0.0f;
+				y += 1.0f;
+			}
+		}
+		quads.vertexCount = vertexBuffer.size();
+
+		BufferLoadDesc quadVBufferDesc = {};
+		quadVBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
+		quadVBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+		quadVBufferDesc.mDesc.mSize = sizeof(Vertex) * quads.vertexCount;
+		quadVBufferDesc.mDesc.mVertexStride = sizeof(Vertex);
+		quadVBufferDesc.pData = vertexBuffer.data();
+		quadVBufferDesc.ppBuffer = &quads.vertexBuffer;
+		addResource(&quadVBufferDesc);
+
+		// Index Buffer
+		eastl::vector<uint32_t> indexBuffer = eastl::vector<uint32_t>(6);
+		indexBuffer[0] = 0;
+		indexBuffer[1] = 1;
+		indexBuffer[2] = 2;
+		indexBuffer[3] = 2;
+		indexBuffer[4] = 3;
+		indexBuffer[5] = 0;
+
+		for (uint32_t i = 0; i < 3; ++i)
+		{
+			uint32_t indices[6] = { 0,1,2, 2,3,0 };
+			for (auto index : indices)
+			{
+				indexBuffer.push_back(i * 4 + index);
+			}
+		}
+
+		if (indexBuffer[4] == 3)
+		{
+			quads.indexCount = static_cast<uint32_t>(indexBuffer.size());
+		}
+
+		BufferLoadDesc quadIndexBufferDesc = {};
+		quadIndexBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_INDEX_BUFFER;
+		quadIndexBufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+		quadIndexBufferDesc.mDesc.mIndexType = INDEX_TYPE_UINT32;
+		quadIndexBufferDesc.mDesc.mSize = sizeof(uint32_t) * quads.indexCount;
+		quadIndexBufferDesc.pData = indexBuffer.data();
+		quadIndexBufferDesc.ppBuffer = &quads.indexBuffer;
+		addResource(&quadIndexBufferDesc);
 	}
 
 	void CreateLightsBuffer()

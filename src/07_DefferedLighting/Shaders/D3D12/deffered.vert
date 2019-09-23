@@ -1,18 +1,24 @@
+
+cbuffer uniformData : register(b0)
+{
+	float4x4 proj;
+};
+
+struct VSInput
+{
+    float4 Position : POSITION;
+    float2 TexCoord : TEXCOORD;
+};
+
 struct VSOutput {
 	float4 Position : SV_POSITION;
     float2 TexCoord : TEXCOORD;
 };
 
-VSOutput main(uint VertexID: SV_VertexID)
+VSOutput main(VSInput input, uint VertexID: SV_VertexID)
 {
 	VSOutput result;
-	// Produce a fullscreen triangle
-	float4 position;
-	position.x = (VertexID == 2) ? 3.0 : -1.0;
-	position.y = (VertexID == 0) ? -3.0 : 1.0;
-	position.zw = 1.0;
-
-	result.Position = position;
-	result.TexCoord = position.xy * float2(0.5, -0.5) + 0.5;
+	result.Position = input.Position;
+	result.TexCoord = input.TexCoord;
 	return result;
 }
