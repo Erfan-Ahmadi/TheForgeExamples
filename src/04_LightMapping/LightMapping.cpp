@@ -498,7 +498,7 @@ public:
 		// Update Instance Data
 		for (uint32_t i = 0; i < gInstanceCount; ++i)
 		{
-			uniformData.pToWorld[i] = mat4::translation(Vector3(-4.0f + 2.0f * i, -1, 5)) *
+			uniformData.pToWorld[i] = mat4::translation(Vector3(-4.0f + 2.0f * i, 0, 5)) *
 				mat4::rotationX(i % 2 * currentTime) *
 				mat4::rotationY((i) % 3 * currentTime);
 		}

@@ -3,7 +3,6 @@
 constexpr size_t gInstanceCount = 20;
 constexpr size_t gMaxInstanceCount = 128;
 
-
 const uint32_t	gImageCount = 3;
 bool			bToggleMicroProfiler = false;
 bool			bPrevToggleMicroProfiler = false;
@@ -124,7 +123,6 @@ public:
 									ADDRESS_MODE_CLAMP_TO_EDGE };
 		addSampler(pRenderer, &samplerDesc, &pSampler);
 
-
 		float pPoints[]
 		{
 			+0.5f, +0.5f, +1.0f,	// Vertex Top Right
@@ -151,7 +149,6 @@ public:
 			0.0f, 0.0f, -1.0f,		// Normal
 			0.0f, 1.0f,				// TextureCoord
 		};
-
 
 		uint64_t quadDataSize = 6 * 8 * sizeof(float);
 
@@ -397,10 +394,10 @@ public:
 		// Load Actions
 		LoadActionsDesc loadActions = {};
 		loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
-		loadActions.mClearColorValues[0].r = 0.0f;
-		loadActions.mClearColorValues[0].g = 0.0f;
-		loadActions.mClearColorValues[0].b = 0.0f;
-		loadActions.mClearColorValues[0].a = 0.0f;
+		loadActions.mClearColorValues[0].r = 0.1f;
+		loadActions.mClearColorValues[0].g = 0.1f;
+		loadActions.mClearColorValues[0].b = 0.1f;
+		loadActions.mClearColorValues[0].a = 1.0f;
 		loadActions.mLoadActionDepth = LOAD_ACTION_CLEAR;
 		loadActions.mClearDepth.depth = 1.0f;
 		loadActions.mClearDepth.stencil = 0;
