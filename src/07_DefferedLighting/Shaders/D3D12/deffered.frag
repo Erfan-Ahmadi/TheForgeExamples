@@ -54,10 +54,12 @@ struct VSOutput
     float2 TexCoord		: TEXCOORD;
 };
 
-float getDepthValue(float2 uv)
+float linearaizeDepthValue(float2 uv)
 {
     float depth = depthBuffer.Sample(uSampler0, uv).x;
-    return 1 - depth;
+	float f = 100;
+	float n = 0.1f;
+    return (2.0f * n) / (f + n - depth * (f - n));
 }
 
 float3 calculateDirectionalLight(DirectionalLight dirLight, float3 normal, float3 viewDir, float3 albedo, float specular);
@@ -66,9 +68,9 @@ float3 calculateSpotLight(SpotLight spotLight, float3 normal, float3 viewDir, fl
 
 float4 main(VSOutput input) : SV_TARGET
 {
-	float depth = getDepthValue(input.TexCoord);
-
-	//return float4(depth, depth, depth, 1);
+	// Uncomment next 2 lines if you want to visualize depth buffer
+	/*float depth = linearaizeDepthValue(input.TexCoord);
+	return float4(depth, depth, depth, 1);*/
 
     float3 Albedo = albedoSpec.Sample(uSampler0, input.TexCoord).rgb;
     float3 Normal = normal.Sample(uSampler0, input.TexCoord).rgb;

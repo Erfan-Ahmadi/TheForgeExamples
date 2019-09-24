@@ -548,6 +548,8 @@ public:
 			conf_free(pass);
 		}
 
+		removeShader(pRenderer, debugPass.pShader);
+
 		RenderPasses.empty();
 
 		for (size_t i = 0; i < sceneData.meshes.size(); ++i)
@@ -631,6 +633,8 @@ public:
 			}
 		}
 
+		removePipeline(pRenderer, debugPass.pPipeline);
+
 		removeRenderTarget(pRenderer, pDepthBuffer);
 		removeSwapChain(pRenderer, pSwapChain);
 		pDepthBuffer = NULL;
@@ -650,7 +654,7 @@ public:
 
 		const float aspectInverse = (float)mSettings.mHeight / (float)mSettings.mWidth;
 		const float horizontal_fov = PI / 2.0f;
-		mat4        projMat = mat4::perspective(horizontal_fov, aspectInverse, 0.1f, 1000.0f);
+		mat4        projMat = mat4::perspective(horizontal_fov, aspectInverse, 0.1f, 100.0f);
 
 		gOffscreenUniformData.view = viewMat;
 		gOffscreenUniformData.proj = projMat;
@@ -1165,12 +1169,12 @@ public:
 		vertexBuffer.push_back({ { +1.0f,		+1.0f,		0.1f	}, { 1.0f, 0.0f } });
 		vertexBuffer.push_back({ { -1.0f,		-1.0f,		0.1f	}, { 0.0f, 1.0f } });
 		vertexBuffer.push_back({ { +1.0f,		-1.0f,		0.1f	}, { 1.0f, 1.0f } });
-		
+
 		vertexBuffer.push_back({ { +1.0f,		+1.0f,		0.2f	}, { 0.0f, 0.0f } });
 		vertexBuffer.push_back({ { +3.0f,		+1.0f,		0.2f	}, { 1.0f, 0.0f } });
 		vertexBuffer.push_back({ { +1.0f,		-1.0f,		0.2f	}, { 0.0f, 1.0f } });
 		vertexBuffer.push_back({ { +3.0f,		-1.0f,		0.2f	}, { 1.0f, 1.0f } });
-		
+
 		vertexBuffer.push_back({ { +1.0f,		+3.0f,		0.3f	}, { 0.0f, 0.0f } });
 		vertexBuffer.push_back({ { +3.0f,		+3.0f,		0.3f	}, { 1.0f, 0.0f } });
 		vertexBuffer.push_back({ { +1.0f,		+1.0f,		0.3f	}, { 0.0f, 1.0f } });
