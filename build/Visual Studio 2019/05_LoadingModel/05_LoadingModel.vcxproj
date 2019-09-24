@@ -208,7 +208,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalOptions>/ENTRY:mainCRTStartup %(AdditionalOptions)</AdditionalOptions>
       <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
-      <AdditionalLibraryDirectories>$(TheForge)Common_3\ThirdParty\OpenSource\assimp\4.1.0\win64\Bin\Debug;$(GLFW_DIR)\lib</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(TheForge)\Common_3\ThirdParty\OpenSource\assimp\4.1.0\win64\Bin\Debug;$(GLFW_DIR)\lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>Xinput9_1_0.lib;ws2_32.lib;gainputstatic.lib;AssimpImporter.lib;assimp.lib;IrrXML.lib;zlibstatic.lib;RendererDX12.lib;OS.lib;%(AdditionalDependencies);</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
