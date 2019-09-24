@@ -27,13 +27,13 @@ float4 main(VSOutput input) : SV_TARGET
     float Specular = albedoSpec.Sample(uSampler0, input.TexCoord).a;
 
 	float3 result;
-
-	if(input.Position.z == 1.0f)
+	
+	if(input.Position.z == 0.1f)
 		return float4(Albedo, 1.0f);
-	else if(input.Position.z == 2.0f)
-		return float4(1,1,1, 1.0f);
-	else if(input.Position.z == 3.0f)
+	if(input.Position.z == 0.2f)
+		return float4(Normal, 1.0f);
+	if(input.Position.z == 0.3f)
 		return float4(Position, 1.0f);
-	else
-		return float4(1,1,1,1);
+
+	return float4(1,1,1,1);
 }

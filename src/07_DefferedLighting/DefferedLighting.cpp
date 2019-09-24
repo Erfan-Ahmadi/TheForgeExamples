@@ -224,7 +224,7 @@ struct
 
 Buffer* pOffscreenUBOs[gImageCount] = { NULL };
 
-bool debugDisplay = true;
+bool gDebugDisplay = false;
 
 struct
 {
@@ -436,6 +436,7 @@ public:
 		pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
 
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &gMicroProfiler));
+		pGui->AddWidget(CheckboxWidget("Debug RTs", &gDebugDisplay));
 
 		// Camera
 		CameraMotionParameters cmp{ 40.0f, 30.0f, 100.0f };
@@ -685,13 +686,13 @@ public:
 
 		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
 
-		if (debugDisplay)
+		if (gDebugDisplay)
 		{
-			gDefferedUniformData.proj = mat4::orthographic(0.0f, 2.0f, -2.0f, 0.0f, -1.0f, 1.0f);
+			gDefferedUniformData.proj = mat4::orthographic(-1.0f, 3.0f, -1.0f, 3.0f, -1.0f, 1.0f);
 		}
 		else
 		{
-			gDefferedUniformData.proj = mat4::orthographic(0.0f, 1.0f, 0.0f, 1.0f, -1.0f, 1.0f);
+			gDefferedUniformData.proj = mat4::orthographic(-1.0f, 1.0f, 1.0f, 3.0f, -1.0f, 1.0f);
 		}
 
 		if (gMicroProfiler != bPrevToggleMicroProfiler)
@@ -838,7 +839,7 @@ public:
 					{ pDepthBuffer->pTexture, RESOURCE_STATE_SHADER_RESOURCE }
 				};
 
-				cmdResourceBarrier(cmd, 0, nullptr, 3, textureBarriers, false);
+				cmdResourceBarrier(cmd, 0, nullptr, 5, textureBarriers, false);
 
 				loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
 				cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
@@ -878,14 +879,14 @@ public:
 						cmdDrawIndexed(cmd, 6, 0, 0);
 					}
 
-					if (debugDisplay)
+					if (gDebugDisplay)
 					{
 						cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Debug", true);
 						{
 							cmdBindPipeline(cmd, debugPass.pPipeline);
 
 							// Draw Fullscreen Quad
-							cmdDrawIndexed(cmd, 12, 6, 4);
+							cmdDrawIndexed(cmd, 18, 6, 0);
 						}
 						cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 					}
@@ -1153,22 +1154,28 @@ public:
 		};
 
 		eastl::vector<Vertex> vertexBuffer;
-		float x = -1.0f;
-		float y = 1.0f;
-		for (uint32_t i = 0; i < 4; i++)
-		{
-			// Last component of uv is used for debug display sampler index
-			vertexBuffer.push_back({ { x + 2.0f,		y - 2.0f,		(float)i	}, { 1.0f, 1.0f } });
-			vertexBuffer.push_back({ { x - 0.0f,		y - 2.0f,		(float)i	}, { 0.0f, 1.0f } });
-			vertexBuffer.push_back({ { x - 0.0f,		y + 0.0f,		(float)i	}, { 0.0f, 0.0f } });
-			vertexBuffer.push_back({ { x + 2.0f,		y + 0.0f,		(float)i	}, { 1.0f, 0.0f } });
-			x += 2.0f;
-			if (x > 2.0f)
-			{
-				x = -1.0f;
-				y = -1.0f;
-			}
-		}
+
+		// Last component of position is used for debug display sampler index
+		vertexBuffer.push_back({ { -1.0f,		+3.0f,		0.0f	}, { 0.0f, 0.0f } });
+		vertexBuffer.push_back({ { +1.0f,		+3.0f,		0.0f	}, { 1.0f, 0.0f } });
+		vertexBuffer.push_back({ { -1.0f,		+1.0f,		0.0f	}, { 0.0f, 1.0f } });
+		vertexBuffer.push_back({ { +1.0f,		+1.0f,		0.0f	}, { 1.0f, 1.0f } });
+
+		vertexBuffer.push_back({ { -1.0f,		+1.0f,		0.1f	}, { 0.0f, 0.0f } });
+		vertexBuffer.push_back({ { +1.0f,		+1.0f,		0.1f	}, { 1.0f, 0.0f } });
+		vertexBuffer.push_back({ { -1.0f,		-1.0f,		0.1f	}, { 0.0f, 1.0f } });
+		vertexBuffer.push_back({ { +1.0f,		-1.0f,		0.1f	}, { 1.0f, 1.0f } });
+		
+		vertexBuffer.push_back({ { +1.0f,		+1.0f,		0.2f	}, { 0.0f, 0.0f } });
+		vertexBuffer.push_back({ { +3.0f,		+1.0f,		0.2f	}, { 1.0f, 0.0f } });
+		vertexBuffer.push_back({ { +1.0f,		-1.0f,		0.2f	}, { 0.0f, 1.0f } });
+		vertexBuffer.push_back({ { +3.0f,		-1.0f,		0.2f	}, { 1.0f, 1.0f } });
+		
+		vertexBuffer.push_back({ { +1.0f,		+3.0f,		0.3f	}, { 0.0f, 0.0f } });
+		vertexBuffer.push_back({ { +3.0f,		+3.0f,		0.3f	}, { 1.0f, 0.0f } });
+		vertexBuffer.push_back({ { +1.0f,		+1.0f,		0.3f	}, { 0.0f, 1.0f } });
+		vertexBuffer.push_back({ { +3.0f,		+1.0f,		0.3f	}, { 1.0f, 1.0f } });
+
 		quads.vertexCount = vertexBuffer.size();
 
 		BufferLoadDesc quadVBufferDesc = {};
@@ -1181,17 +1188,11 @@ public:
 		addResource(&quadVBufferDesc);
 
 		// Index Buffer
-		eastl::vector<uint32_t> indexBuffer = eastl::vector<uint32_t>(6);
-		indexBuffer[0] = 0;
-		indexBuffer[1] = 1;
-		indexBuffer[2] = 2;
-		indexBuffer[3] = 2;
-		indexBuffer[4] = 3;
-		indexBuffer[5] = 0;
+		eastl::vector<uint32_t> indexBuffer;
 
-		for (uint32_t i = 1; i < 4; ++i)
+		for (uint32_t i = 0; i < 4; ++i)
 		{
-			uint32_t indices[6] = { 0,1,2, 2,3,0 };
+			uint32_t indices[6] = { 0,2,1, 1,2,3 };
 			for (auto index : indices)
 			{
 				indexBuffer.push_back(i * 4 + index);
