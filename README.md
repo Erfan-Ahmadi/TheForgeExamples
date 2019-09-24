@@ -13,6 +13,12 @@
   - [x] [Gooch Shading](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/06_GoochShading)
   - [x] Profiling and UI
   - [x] **Deferred Lighting**
+  - [ ] Mirror Reflection
+  - [ ] Image Space Effect
+  - [ ] Normal Mapping
+  - [ ] Parallax Mapping
+  - [ ] Stencil Buffer Toon Shading
+  - [ ] Shadow Mapping
   - [ ] [Ambient Occlusion](https://github.com/Erfan-Ahmadi/AmbientOcclusion)
   - [ ] Gamma Correction
   - [ ] Tone Mapping / HDR
