@@ -19,6 +19,7 @@ VSOutput main(VSInput input, uint VertexID: SV_VertexID)
 {
 	VSOutput result;
 	result.Position = mul(proj, input.Position);
+	result.Position.z = input.Position.z;
 	result.TexCoord = input.TexCoord;
 	return result;
 }

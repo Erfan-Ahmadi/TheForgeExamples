@@ -27,6 +27,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\debug.frag" />
+    <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\debug.vert" />
     <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\deffered.frag" />
     <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\deffered.vert" />
     <None Include="..\..\..\src\07_DefferedLighting\Shaders\D3D12\offscreen.frag" />

@@ -82,6 +82,12 @@ struct GBufferRT
 	};
 };
 
+struct
+{
+	Shader* pShader;
+	Pipeline* pPipeline;
+} debugPass;
+
 class RenderPassData
 {
 public:
@@ -218,7 +224,8 @@ struct
 
 Buffer* pOffscreenUBOs[gImageCount] = { NULL };
 
-bool debugDisplay = 1.0f;
+bool debugDisplay = true;
+
 struct
 {
 	mat4 proj;
@@ -297,6 +304,9 @@ public:
 		shaderDesc.mStages[0] = { "deffered.vert", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[1] = { "deffered.frag", NULL, 0, FSR_SrcShaders };
 		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Deffered]->pShader);
+		shaderDesc.mStages[0] = { "debug.vert", NULL, 0, FSR_SrcShaders };
+		shaderDesc.mStages[1] = { "debug.frag", NULL, 0, FSR_SrcShaders };
+		addShader(pRenderer, &shaderDesc, &debugPass.pShader);
 
 		//Create rasteriser state objects
 		{
@@ -343,11 +353,12 @@ public:
 				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::GPass]->pRootSignature);
 			}
 
-			// Root Signature for Deffered Pipeline
+			// Root Signature for Deffered and Debug Pipeline
 			{
+				Shader* shaders[2] = { RenderPasses[RenderPass::Deffered]->pShader, debugPass.pShader };
 				RootSignatureDesc rootDesc = {};
-				rootDesc.mShaderCount = 1;
-				rootDesc.ppShaders = &RenderPasses[RenderPass::Deffered]->pShader;
+				rootDesc.mShaderCount = 2;
+				rootDesc.ppShaders = shaders;
 				rootDesc.mStaticSamplerCount = 1;
 				rootDesc.ppStaticSamplerNames = &samplerNames;
 				rootDesc.ppStaticSamplers = &pSampler;
@@ -355,7 +366,7 @@ public:
 			}
 		}
 
-		DescriptorBinderDesc descriptorBinderDescs[2] =
+		DescriptorBinderDesc descriptorBinderDescs[3] =
 		{
 			{ RenderPasses[RenderPass::GPass]->pRootSignature },
 			{ RenderPasses[RenderPass::Deffered]->pRootSignature }
@@ -366,7 +377,6 @@ public:
 		// Create Uniform Buffers
 		{
 			// Offscreen
-
 			{
 				BufferLoadDesc bufferDesc = {};
 				bufferDesc = {};
@@ -651,7 +661,6 @@ public:
 
 		viewMat.setTranslation(vec3(0));
 
-
 		directionalLights[0].direction = float3{ 0.0f, -1.0f, 0.0f };
 		directionalLights[0].ambient = float3{ 0.05f, 0.05f, 0.05f };
 		directionalLights[0].diffuse = float3{ 0.5f, 0.5f, 0.5f };
@@ -678,7 +687,7 @@ public:
 
 		if (debugDisplay)
 		{
-			gDefferedUniformData.proj = mat4::orthographic(0.0f, 2.0f, 0.0f, 2.0f, -1.0f, 1.0f);
+			gDefferedUniformData.proj = mat4::orthographic(0.0f, 2.0f, -2.0f, 0.0f, -1.0f, 1.0f);
 		}
 		else
 		{
@@ -857,16 +866,28 @@ public:
 					params[8].pName = "uniformData";
 					params[8].ppBuffers = &pDefferedUBOs[gFrameIndex];
 
+					cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Deffered]->pRootSignature, 9, params);
+
+					Buffer* pVertexBuffers[] = { quads.vertexBuffer };
+					cmdBindVertexBuffer(cmd, 1, pVertexBuffers, NULL);
+					cmdBindIndexBuffer(cmd, quads.indexBuffer, 0);
+
 					cmdBindPipeline(cmd, RenderPasses[RenderPass::Deffered]->pPipeline);
 					{
-						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Deffered]->pRootSignature, 9, params);
-
-						Buffer* pVertexBuffers[] = { quads.vertexBuffer };
-						cmdBindVertexBuffer(cmd, 1, pVertexBuffers, NULL);
-						cmdBindIndexBuffer(cmd, quads.indexBuffer, 0);
-
 						// Draw Fullscreen Quad
 						cmdDrawIndexed(cmd, 6, 0, 0);
+					}
+
+					if (debugDisplay)
+					{
+						cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Debug", true);
+						{
+							cmdBindPipeline(cmd, debugPass.pPipeline);
+
+							// Draw Fullscreen Quad
+							cmdDrawIndexed(cmd, 12, 6, 4);
+						}
+						cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 					}
 				}
 
@@ -1068,6 +1089,41 @@ public:
 
 			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Deffered]->pPipeline);
 		}
+
+		// Debug
+		{
+			VertexLayout vertexLayout = {};
+			vertexLayout.mAttribCount = 2;
+
+			vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
+			vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
+			vertexLayout.mAttribs[0].mBinding = 0;
+			vertexLayout.mAttribs[0].mLocation = 0;
+			vertexLayout.mAttribs[0].mOffset = 0;
+
+			vertexLayout.mAttribs[1].mSemantic = SEMANTIC_TEXCOORD0;
+			vertexLayout.mAttribs[1].mFormat = ImageFormat::RG32F;
+			vertexLayout.mAttribs[1].mBinding = 0;
+			vertexLayout.mAttribs[1].mLocation = 1;
+			vertexLayout.mAttribs[1].mOffset = sizeof(float) * 3;
+
+			PipelineDesc desc = {};
+			desc.mType = PIPELINE_TYPE_GRAPHICS;
+			GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
+			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
+			pipelineSettings.mRenderTargetCount = 1;
+			pipelineSettings.pDepthState = pDepthNone;
+			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
+			pipelineSettings.pSrgbValues = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSrgb;
+			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
+			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
+			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Deffered]->pRootSignature;
+			pipelineSettings.pShaderProgram = debugPass.pShader;
+			pipelineSettings.pVertexLayout = &vertexLayout;
+			pipelineSettings.pRasterizerState = pRasterDefault;
+
+			addPipeline(pRenderer, &desc, &debugPass.pPipeline);
+		}
 	}
 
 	const char* GetName() { return "07_DefferedLighting"; }
@@ -1097,20 +1153,20 @@ public:
 		};
 
 		eastl::vector<Vertex> vertexBuffer;
-		float x = 0.0f;
-		float y = 0.0f;
-		for (uint32_t i = 0; i < 3; i++)
+		float x = -1.0f;
+		float y = 1.0f;
+		for (uint32_t i = 0; i < 4; i++)
 		{
 			// Last component of uv is used for debug display sampler index
-			vertexBuffer.push_back({ { x + 1.0f,		y + 1.0f,		(float)i	}, { 1.0f, 0.0f } });
-			vertexBuffer.push_back({ { x - 1.0f,		y + 1.0f,		(float)i	}, { 0.0f, 0.0f} });
-			vertexBuffer.push_back({ { x - 1.0f,		y - 1.0f,		(float)i	}, { 0.0f, 1.0f} });
-			vertexBuffer.push_back({ { x + 1.0f,		y - 1.0f,		(float)i	}, { 1.0f, 1.0f } });
-			x += 1.0f;
-			if (x > 1.0f)
+			vertexBuffer.push_back({ { x + 2.0f,		y - 2.0f,		(float)i	}, { 1.0f, 1.0f } });
+			vertexBuffer.push_back({ { x - 0.0f,		y - 2.0f,		(float)i	}, { 0.0f, 1.0f } });
+			vertexBuffer.push_back({ { x - 0.0f,		y + 0.0f,		(float)i	}, { 0.0f, 0.0f } });
+			vertexBuffer.push_back({ { x + 2.0f,		y + 0.0f,		(float)i	}, { 1.0f, 0.0f } });
+			x += 2.0f;
+			if (x > 2.0f)
 			{
-				x = 0.0f;
-				y += 1.0f;
+				x = -1.0f;
+				y = -1.0f;
 			}
 		}
 		quads.vertexCount = vertexBuffer.size();
@@ -1133,7 +1189,7 @@ public:
 		indexBuffer[4] = 3;
 		indexBuffer[5] = 0;
 
-		for (uint32_t i = 0; i < 3; ++i)
+		for (uint32_t i = 1; i < 4; ++i)
 		{
 			uint32_t indices[6] = { 0,1,2, 2,3,0 };
 			for (auto index : indices)
@@ -1142,10 +1198,7 @@ public:
 			}
 		}
 
-		if (indexBuffer[4] == 3)
-		{
-			quads.indexCount = static_cast<uint32_t>(indexBuffer.size());
-		}
+		quads.indexCount = static_cast<uint32_t>(indexBuffer.size());
 
 		BufferLoadDesc quadIndexBufferDesc = {};
 		quadIndexBufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_INDEX_BUFFER;
