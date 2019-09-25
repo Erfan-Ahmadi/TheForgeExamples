@@ -30,6 +30,8 @@
     <ClCompile Include="..\..\..\src\08_ToonShading\ToonShading.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\..\src\08_ToonShading\Shaders\D3D12\outline.frag" />
+    <None Include="..\..\..\src\08_ToonShading\Shaders\D3D12\outline.vert" />
     <None Include="..\..\..\src\08_ToonShading\Shaders\D3D12\toon.frag" />
     <None Include="..\..\..\src\08_ToonShading\Shaders\D3D12\toon.vert" />
     <None Include="..\..\..\src\08_ToonShading\Shaders\D3D12\profile.frag" />

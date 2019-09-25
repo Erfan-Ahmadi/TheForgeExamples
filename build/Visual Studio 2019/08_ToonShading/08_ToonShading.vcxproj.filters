@@ -44,5 +44,11 @@
     <None Include="..\..\..\src\08_ToonShading\Shaders\Vulkan\toon.vert">
       <Filter>Shaders\Vulkan</Filter>
     </None>
+    <None Include="..\..\..\src\08_ToonShading\Shaders\D3D12\outline.frag">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
+    <None Include="..\..\..\src\08_ToonShading\Shaders\D3D12\outline.vert">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
   </ItemGroup>
 </Project>
