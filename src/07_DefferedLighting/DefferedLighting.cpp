@@ -432,6 +432,7 @@ public:
 		pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
 
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &gMicroProfiler));
+		pGui->AddWidget(CheckboxWidget("Debug Display", &gDebugDisplay));
 
 		// Camera
 		CameraMotionParameters cmp{ 40.0f, 30.0f, 100.0f };
@@ -701,11 +702,7 @@ public:
 
 		if (gMicroProfiler != bPrevToggleMicroProfiler)
 		{
-			Profile& S = *ProfileGet();
-			int nValue = gMicroProfiler ? 1 : 0;
-			nValue = nValue >= 0 && nValue < P_DRAW_SIZE ? nValue : S.nDisplay;
-			S.nDisplay = nValue;
-
+			toggleProfiler();
 			bPrevToggleMicroProfiler = gMicroProfiler;
 		}
 
@@ -987,13 +984,13 @@ public:
 			vertexLayout.mAttribCount = 3;
 
 			vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
-			vertexLayout.mAttribs[0].mFormat = TinyImageFormat_R32G32B32A32_SFLOAT;
+			vertexLayout.mAttribs[0].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
 			vertexLayout.mAttribs[0].mBinding = 0;
 			vertexLayout.mAttribs[0].mLocation = 0;
 			vertexLayout.mAttribs[0].mOffset = 0;
 
 			vertexLayout.mAttribs[1].mSemantic = SEMANTIC_NORMAL;
-			vertexLayout.mAttribs[1].mFormat = TinyImageFormat_R32G32B32A32_SFLOAT;
+			vertexLayout.mAttribs[1].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
 			vertexLayout.mAttribs[1].mBinding = 1;
 			vertexLayout.mAttribs[1].mLocation = 1;
 			vertexLayout.mAttribs[1].mOffset = 0;
@@ -1143,7 +1140,6 @@ public:
 		// Deffered and Debug Descriptor Sets
 		{
 			// DESCRIPTOR_UPDATE_FREQ_PER_FRAME
-
 			DescriptorData params[8] = {};
 			params[0].pName = "albedoSpec";
 			params[0].ppTextures = &RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::AlbedoSpecular]->pTexture;
@@ -1162,9 +1158,9 @@ public:
 
 			for (uint32_t i = 0; i < gImageCount; ++i)
 			{
-				params[7].pName = "uniformData";
+				params[7].pName = "UniformData";
 				params[7].ppBuffers = &pDefferedUBOs[gFrameIndex];
-				updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::GPass]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 8, params);
+				updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Deffered]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 8, params);
 			}
 		}
 	}

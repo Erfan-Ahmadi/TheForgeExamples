@@ -30,11 +30,11 @@ struct SpotLight
     float3 att_params;
 };
 
-StructuredBuffer <DirectionalLight> DirectionalLights	: register(t5, UPDATE_FREQ_PER_DRAW);
-StructuredBuffer <PointLight>		PointLights			: register(t6, UPDATE_FREQ_PER_DRAW);
-StructuredBuffer <SpotLight>		SpotLights			: register(t7, UPDATE_FREQ_PER_DRAW);
+StructuredBuffer <DirectionalLight> DirectionalLights	: register(t5, UPDATE_FREQ_PER_FRAME);
+StructuredBuffer <PointLight>		PointLights			: register(t6, UPDATE_FREQ_PER_FRAME);
+StructuredBuffer <SpotLight>		SpotLights			: register(t7, UPDATE_FREQ_PER_FRAME);
 
-cbuffer LightData : register(b0, UPDATE_FREQ_PER_FRAME)
+cbuffer LightData : register(b1, UPDATE_FREQ_PER_FRAME)
 {
 	int numDirectionalLights;
 	int numPointLights;
