@@ -365,6 +365,7 @@ public:
 		Semaphore* pRenderCompleteSemaphore = pRenderCompleteSemaphores[gFrameIndex];
 		Fence* pRenderCompleteFence = pRenderCompleteFences[gFrameIndex];
 
+		// Stall if CPU is running "Swap Chain Buffer Count" frames ahead of GPU
 		FenceStatus fenceStatus;
 		getFenceStatus(pRenderer, pRenderCompleteFence, &fenceStatus);
 		if (fenceStatus == FENCE_STATUS_INCOMPLETE)
@@ -480,7 +481,7 @@ public:
 			DescriptorData params[1] = {};
 			params[0].pName = "UniformData";
 			params[0].ppBuffers = &pUniformBuffers[i];
-			updateDescriptorSet(pRenderer, 0, pDescriptorSetUniforms, 1, params);
+			updateDescriptorSet(pRenderer, i, pDescriptorSetUniforms, 1, params);
 		}
 	}
 };
