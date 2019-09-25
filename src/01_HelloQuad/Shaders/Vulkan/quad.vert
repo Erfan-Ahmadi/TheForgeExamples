@@ -4,7 +4,7 @@ layout(location = 0) in vec4 Position;
 layout(location = 1) in vec4 Normal;
 layout(location = 2) in vec2 TexCoords;
 
-layout(set = 0, binding = 0) uniform UniformData
+layout(set = 0, UPDATE_FREQ_PER_FRAME, binding = 0) uniform UniformData
 {
 	mat4 view;
 	mat4 proj;

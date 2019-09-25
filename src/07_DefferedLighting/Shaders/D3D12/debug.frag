@@ -1,9 +1,9 @@
 
-Texture2D			depthBuffer		: register(t1);
-Texture2D			albedoSpec		: register(t2);
-Texture2D			normal			: register(t3);
-Texture2D			position		: register(t4);
-SamplerState		uSampler0	: register(s0);
+Texture2D			depthBuffer		: register(t1, UPDATE_FREQ_PER_FRAME);
+Texture2D			albedoSpec		: register(t2, UPDATE_FREQ_PER_FRAME);
+Texture2D			normal			: register(t3, UPDATE_FREQ_PER_FRAME);
+Texture2D			position		: register(t4, UPDATE_FREQ_PER_FRAME);
+SamplerState		uSampler0		: register(s0);
 
 struct VSOutput 
 {
@@ -19,8 +19,6 @@ float getDepthValue(float2 uv)
 
 float4 main(VSOutput input) : SV_TARGET
 {
-	float depth = getDepthValue(input.TexCoord);
-
     float3 Albedo = albedoSpec.Sample(uSampler0, input.TexCoord).rgb;
     float3 Normal = normal.Sample(uSampler0, input.TexCoord).rgb;
     float3 Position = position.Sample(uSampler0, input.TexCoord).rgb;
@@ -35,5 +33,5 @@ float4 main(VSOutput input) : SV_TARGET
 	if(input.Position.z == 0.3f)
 		return float4(Position, 1.0f);
 
-	return float4(1,1,1,1);
+	return float4(1.0f, 1.0f, 1.0f, 1.0f);
 }

@@ -1,5 +1,5 @@
 
-cbuffer uniformData : register(b0)
+cbuffer uniformData : register(b0, UPDATE_FREQ_PER_FRAME)
 {
 	float4x4 proj;
 };

@@ -28,11 +28,11 @@ Shader* pQuadShader = NULL;
 Texture* pQuadTexture = NULL;
 Buffer* pQuadVertexBuffer = NULL;
 Pipeline* pQuadPipeline = NULL;
-Pipeline* pSecondQuadPipeline = NULL;
 
 uint32_t			gFrameIndex = 0;
 
-DescriptorBinder* pDescriptorBinder = NULL;
+DescriptorSet* pDescriptorSetTexture = { NULL };
+DescriptorSet* pDescriptorSetUniforms = { NULL };
 
 UIApp              gAppUI;
 GpuProfiler* pGpuProfiler = NULL;
@@ -186,14 +186,16 @@ public:
 		rootDesc.ppStaticSamplerNames = pStaticSamplers;
 		addRootSignature(pRenderer, &rootDesc, &pRootSignature);
 
-		DescriptorBinderDesc descriptorBinderDescs[1] = { {pRootSignature} };
-		addDescriptorBinder(pRenderer, 0, 1, descriptorBinderDescs, &pDescriptorBinder);
+		DescriptorSetDesc desc = { pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
+		addDescriptorSet(pRenderer, &desc, &pDescriptorSetTexture);
+		desc = { pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
+		addDescriptorSet(pRenderer, &desc, &pDescriptorSetUniforms);
 
 		// Rasterizer State
 		RasterizerStateDesc rasterizerStateDesc = {};
 		rasterizerStateDesc.mCullMode = CULL_MODE_FRONT;
 		addRasterizerState(pRenderer, &rasterizerStateDesc, &pRastState);
-		
+
 		// Rasterizer State
 		rasterizerStateDesc.mCullMode = CULL_MODE_BACK;
 		addRasterizerState(pRenderer, &rasterizerStateDesc, &pSecondRastState);
@@ -240,7 +242,7 @@ public:
 		destroyCameraController(pCameraController);
 
 		gAppUI.Exit();
-				
+
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
 			removeResource(pUniformBuffers[i]);
@@ -249,7 +251,8 @@ public:
 		removeResource(pQuadVertexBuffer);
 		removeResource(pQuadTexture);
 
-		removeDescriptorBinder(pRenderer, pDescriptorBinder);
+		removeDescriptorSet(pRenderer, pDescriptorSetTexture);
+		removeDescriptorSet(pRenderer, pDescriptorSetUniforms);
 
 		removeSampler(pRenderer, pSampler);
 		removeShader(pRenderer, pQuadShader);
@@ -287,19 +290,19 @@ public:
 		vertexLayout.mAttribCount = 3;
 
 		vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
-		vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
+		vertexLayout.mAttribs[0].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
 		vertexLayout.mAttribs[0].mBinding = 0;
 		vertexLayout.mAttribs[0].mLocation = 0;
 		vertexLayout.mAttribs[0].mOffset = 0;
 
 		vertexLayout.mAttribs[1].mSemantic = SEMANTIC_NORMAL;
-		vertexLayout.mAttribs[1].mFormat = ImageFormat::RGB32F;
+		vertexLayout.mAttribs[1].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
 		vertexLayout.mAttribs[1].mBinding = 0;
 		vertexLayout.mAttribs[1].mLocation = 1;
 		vertexLayout.mAttribs[1].mOffset = 3 * sizeof(float);
 
 		vertexLayout.mAttribs[2].mSemantic = SEMANTIC_TEXCOORD0;
-		vertexLayout.mAttribs[2].mFormat = ImageFormat::RG32F;
+		vertexLayout.mAttribs[2].mFormat = TinyImageFormat_R32G32_SFLOAT;
 		vertexLayout.mAttribs[2].mBinding = 0;
 		vertexLayout.mAttribs[2].mLocation = 2;
 		vertexLayout.mAttribs[2].mOffset = 6 * sizeof(float);
@@ -311,7 +314,6 @@ public:
 		pipelineSettings.mRenderTargetCount = 1;
 		pipelineSettings.pDepthState = pDepthState;
 		pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
-		pipelineSettings.pSrgbValues = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSrgb;
 		pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
 		pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
 		pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
@@ -321,8 +323,7 @@ public:
 		pipelineSettings.pRasterizerState = pRastState;
 		addPipeline(pRenderer, &desc, &pQuadPipeline);
 
-		pipelineSettings.pRasterizerState = pSecondRastState;
-		addPipeline(pRenderer, &desc, &pSecondQuadPipeline);
+		PrepareDescriptorSets();
 
 		return true;
 	}
@@ -342,7 +343,7 @@ public:
 	void Update(float deltaTime)
 	{
 		pCameraController->update(deltaTime);
-		
+
 		// update camera with time
 		mat4 viewMat = pCameraController->getViewMatrix();
 
@@ -352,7 +353,7 @@ public:
 
 		ubo.view = viewMat;
 		ubo.proj = projMat;
-		
+
 		viewMat.setTranslation(vec3(0));
 	}
 
@@ -368,9 +369,9 @@ public:
 		getFenceStatus(pRenderer, pRenderCompleteFence, &fenceStatus);
 		if (fenceStatus == FENCE_STATUS_INCOMPLETE)
 			waitForFences(pRenderer, 1, &pRenderCompleteFence);
-		
+
 		// Update uniform buffers
-		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &ubo};
+		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &ubo };
 		updateResource(&viewProjCbv);
 
 		// Load Actions
@@ -392,7 +393,7 @@ public:
 				{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
 			};
 
-			cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers, false);
+			cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
 
 			cmdBindRenderTargets(cmd, 1, &pRenderTarget, pDepthBuffer, &loadActions, NULL, NULL, -1, -1);
 			cmdSetViewport(cmd, 0.0f, 0.0f, (float)pRenderTarget->mDesc.mWidth, (float)pRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
@@ -400,30 +401,14 @@ public:
 
 			cmdBindPipeline(cmd, pQuadPipeline);
 			{
-				DescriptorData params[2] = {};
-				params[0].pName = "Texture";
-				params[0].ppTextures = &pQuadTexture;
-				params[1].pName = "UniformData";
-				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
-				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 2, params);
-				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
-				cmdDraw(cmd, 6, 0);
-			}
-
-			cmdBindPipeline(cmd, pSecondQuadPipeline);
-			{
-				DescriptorData params[2] = {};
-				params[0].pName = "Texture";
-				params[0].ppTextures = &pQuadTexture;
-				params[1].pName = "UniformData";
-				params[1].ppBuffers = &pUniformBuffers[gFrameIndex];
-				cmdBindDescriptors(cmd, pDescriptorBinder, pRootSignature, 2, params);
+				cmdBindDescriptorSet(cmd, 0, pDescriptorSetTexture);
+				cmdBindDescriptorSet(cmd, gFrameIndex, pDescriptorSetUniforms);
 				cmdBindVertexBuffer(cmd, 1, &pQuadVertexBuffer, NULL);
 				cmdDraw(cmd, 6, 0);
 			}
 
 			textureBarriers[0] = { pRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
-			cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
+			cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers);
 
 		}
 		endCmd(cmd);
@@ -454,7 +439,7 @@ public:
 		depthRT.mArraySize = 1;
 		depthRT.mClearValue.depth = 1.0f;
 		depthRT.mClearValue.stencil = 0.0f;
-		depthRT.mFormat = ImageFormat::D32F;
+		depthRT.mFormat = TinyImageFormat_D32_SFLOAT;
 		depthRT.mDepth = 1;
 		depthRT.mWidth = mSettings.mWidth;
 		depthRT.mHeight = mSettings.mHeight;
@@ -466,7 +451,7 @@ public:
 	}
 
 	const char* GetName() { return "01_HelloQuad"; }
-		
+
 	void RecenterCameraView(float maxDistance, vec3 lookAt = vec3(0))
 	{
 		vec3 p = pCameraController->getViewPosition();
@@ -481,6 +466,22 @@ public:
 		p = d + lookAt;
 		pCameraController->moveTo(p);
 		pCameraController->lookAt(lookAt);
+	}
+
+	void PrepareDescriptorSets()
+	{
+		DescriptorData params[1] = {};
+		params[0].pName = "Texture";
+		params[0].ppTextures = &pQuadTexture;
+		updateDescriptorSet(pRenderer, 0, pDescriptorSetTexture, 1, params);
+
+		for (uint32_t i = 0; i < gImageCount; ++i)
+		{
+			DescriptorData params[1] = {};
+			params[0].pName = "UniformData";
+			params[0].ppBuffers = &pUniformBuffers[i];
+			updateDescriptorSet(pRenderer, 0, pDescriptorSetUniforms, 1, params);
+		}
 	}
 };
 

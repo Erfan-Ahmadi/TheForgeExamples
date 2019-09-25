@@ -40,8 +40,6 @@ SwapChain* pSwapChain = NULL;
 
 uint32_t			gFrameIndex = 0;
 
-DescriptorBinder* pDescriptorBinder = NULL;
-
 bool           gMicroProfiler = false;
 bool           bPrevToggleMicroProfiler = false;
 
@@ -93,6 +91,7 @@ class RenderPassData
 public:
 	Shader* pShader;
 	RootSignature* pRootSignature;
+	DescriptorSet* pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_COUNT];
 	Pipeline* pPipeline;
 	CmdPool* pCmdPool;
 	Cmd** ppCmds;
@@ -291,11 +290,6 @@ public:
 		// Resource Loading
 		initResourceLoaderInterface(pRenderer);
 
-		// Initialize profile
-		initProfiler(pRenderer);
-
-		addGpuProfiler(pRenderer, pGraphicsQueue, &pGpuProfiler, "GpuProfiler");
-
 		// Shader
 		ShaderLoadDesc shaderDesc = {};
 		shaderDesc.mStages[0] = { "offscreen.vert", NULL, 0, FSR_SrcShaders };
@@ -351,11 +345,16 @@ public:
 				rootDesc.ppStaticSamplerNames = &samplerNames;
 				rootDesc.ppStaticSamplers = &pSampler;
 				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::GPass]->pRootSignature);
+
+				DescriptorSetDesc setDesc = { RenderPasses[RenderPass::GPass]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
+				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::GPass]->pDescriptorSets[0]);
+				setDesc = { RenderPasses[RenderPass::GPass]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
+				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::GPass]->pDescriptorSets[1]);
 			}
 
 			// Root Signature for Deffered and Debug Pipeline
 			{
-				Shader* shaders[2] = { RenderPasses[RenderPass::Deffered]->pShader, debugPass.pShader };
+				Shader* shaders[2] = {  RenderPasses[RenderPass::Deffered]->pShader, debugPass.pShader };
 				RootSignatureDesc rootDesc = {};
 				rootDesc.mShaderCount = 2;
 				rootDesc.ppShaders = shaders;
@@ -363,16 +362,13 @@ public:
 				rootDesc.ppStaticSamplerNames = &samplerNames;
 				rootDesc.ppStaticSamplers = &pSampler;
 				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Deffered]->pRootSignature);
+
+				DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Deffered]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
+				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Deffered]->pDescriptorSets[0]);
+				setDesc = { RenderPasses[RenderPass::Deffered]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
+				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Deffered]->pDescriptorSets[1]);
 			}
 		}
-
-		DescriptorBinderDesc descriptorBinderDescs[3] =
-		{
-			{ RenderPasses[RenderPass::GPass]->pRootSignature },
-			{ RenderPasses[RenderPass::Deffered]->pRootSignature }
-		};
-
-		addDescriptorBinder(pRenderer, 0, 2, descriptorBinderDescs, &pDescriptorBinder);
 
 		// Create Uniform Buffers
 		{
@@ -436,7 +432,6 @@ public:
 		pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
 
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &gMicroProfiler));
-		pGui->AddWidget(CheckboxWidget("Debug RTs", &gDebugDisplay));
 
 		// Camera
 		CameraMotionParameters cmp{ 40.0f, 30.0f, 100.0f };
@@ -449,31 +444,27 @@ public:
 		if (!initInputSystem(pWindow))
 			return false;
 
-		// Microprofiler Actions
-		// #TODO: Remove this once the profiler UI is ported to use our UI system
-		InputActionDesc actionDesc = { InputBindings::FLOAT_LEFTSTICK, [](InputActionContext* ctx) { onProfilerButton(false, &ctx->mFloat2, true); return !gMicroProfiler; } };
-		addInputAction(&actionDesc);
-		actionDesc = { InputBindings::BUTTON_SOUTH, [](InputActionContext* ctx) { onProfilerButton(ctx->mBool, ctx->pPosition, false); return true; } };
-		addInputAction(&actionDesc);
+		// Initialize microprofiler and it's UI.
+		initProfiler();
+
+		// Gpu profiler can only be added after initProfile.
+		addGpuProfiler(pRenderer, pGraphicsQueue, &pGpuProfiler, "GpuProfiler");
 
 		// App Actions
-		actionDesc = { InputBindings::BUTTON_FULLSCREEN, [](InputActionContext* ctx) { toggleFullscreen(((IApp*)ctx->pUserData)->pWindow); return true; }, this };
+		InputActionDesc actionDesc = { InputBindings::BUTTON_FULLSCREEN, [](InputActionContext* ctx) { toggleFullscreen(((IApp*)ctx->pUserData)->pWindow); return true; }, this };
 		addInputAction(&actionDesc);
-
 		actionDesc = { InputBindings::BUTTON_EXIT, [](InputActionContext* ctx) { requestShutdown(); return true; } };
 		addInputAction(&actionDesc);
-
 		actionDesc =
 		{
 			InputBindings::BUTTON_ANY, [](InputActionContext* ctx)
 			{
-				bool capture = gAppUI.OnButton(ctx->mBinding, ctx->mBool, ctx->pPosition, !gMicroProfiler);
+				bool capture = gAppUI.OnButton(ctx->mBinding, ctx->mBool, ctx->pPosition);
 				setEnableCaptureInput(capture && INPUT_ACTION_PHASE_CANCELED != ctx->mPhase);
 				return true;
 			}, this
 		};
 		addInputAction(&actionDesc);
-
 		typedef bool (*CameraInputHandler)(InputActionContext * ctx, uint32_t index);
 		static CameraInputHandler onCameraInput = [](InputActionContext* ctx, uint32_t index)
 		{
@@ -522,6 +513,10 @@ public:
 			if (!pass)
 				continue;
 
+			for (uint32_t i = 0; i < DESCRIPTOR_UPDATE_FREQ_COUNT; ++i)
+				if (pass->pDescriptorSets[i])
+					removeDescriptorSet(pRenderer, pass->pDescriptorSets[i]);
+
 			for (RenderTarget* rt : pass->RenderTargets)
 			{
 				removeRenderTarget(pRenderer, rt);
@@ -544,13 +539,15 @@ public:
 			removeShader(pRenderer, pass->pShader);
 
 			removeRootSignature(pRenderer, pass->pRootSignature);
+
 			pass->~RenderPassData();
 			conf_free(pass);
 		}
 
+		RenderPasses.empty();
+
 		removeShader(pRenderer, debugPass.pShader);
 
-		RenderPasses.empty();
 
 		for (size_t i = 0; i < sceneData.meshes.size(); ++i)
 		{
@@ -560,7 +557,8 @@ public:
 			removeResource(sceneData.meshes[i]->pIndicesStream);
 		}
 
-		removeDescriptorBinder(pRenderer, pDescriptorBinder);
+		removeResource(textures.pTextureColor);
+		removeResource(textures.pTextureSpecular);
 
 		removeRasterizerState(pRasterDefault);
 		removeDepthState(pDepthDefault);
@@ -593,9 +591,11 @@ public:
 		if (!gVirtualJoystick.Load(pSwapChain->ppSwapchainRenderTargets[0]))
 			return false;
 
-		loadProfiler(pSwapChain->ppSwapchainRenderTargets[0]);
+		loadProfiler(&gAppUI, mSettings.mWidth, mSettings.mHeight);
 
 		CreatePipelines();
+
+		PrepareDescriptorSets();
 
 		return true;
 	}
@@ -777,12 +777,12 @@ public:
 				for (uint32_t i = 0; i < RenderPasses[RenderPass::GPass]->RenderTargets.size(); ++i)
 				{
 					barrier = { RenderPasses[RenderPass::GPass]->RenderTargets[i]->pTexture, RESOURCE_STATE_RENDER_TARGET };
-					cmdResourceBarrier(cmd, 0, NULL, 1, &barrier, false);
+					cmdResourceBarrier(cmd, 0, NULL, 1, &barrier);
 				}
 
 				// Transfer DepthBuffer to a DephtWrite State
 				barrier = { pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE };
-				cmdResourceBarrier(cmd, 0, NULL, 1, &barrier, false);
+				cmdResourceBarrier(cmd, 0, NULL, 1, &barrier);
 
 				cmdBindRenderTargets(
 					cmd,
@@ -798,25 +798,16 @@ public:
 					cmd, 0, 0, RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mWidth,
 					RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mHeight);
 
+				cmdBindPipeline(cmd, RenderPasses[RenderPass::GPass]->pPipeline);
 				{
-					DescriptorData params[3] = {};
-					params[0].pName = "Texture";
-					params[0].ppTextures = &textures.pTextureColor;
-					params[1].pName = "TextureSpecular";
-					params[1].ppTextures = &textures.pTextureSpecular;
-					params[2].pName = "UniformData";
-					params[2].ppBuffers = &pOffscreenUBOs[gFrameIndex];
+					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::GPass]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::GPass]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+					Buffer* pVertexBuffers[] = { sceneData.meshes[0]->pPositionStream, sceneData.meshes[0]->pNormalStream, sceneData.meshes[0]->pUVStream };
+					cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
 
-					cmdBindPipeline(cmd, RenderPasses[RenderPass::GPass]->pPipeline);
-					{
-						cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::GPass]->pRootSignature, 3, params);
-						Buffer* pVertexBuffers[] = { sceneData.meshes[0]->pPositionStream, sceneData.meshes[0]->pNormalStream, sceneData.meshes[0]->pUVStream };
-						cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
+					cmdBindIndexBuffer(cmd, sceneData.meshes[0]->pIndicesStream, 0);
 
-						cmdBindIndexBuffer(cmd, sceneData.meshes[0]->pIndicesStream, 0);
-
-						cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
-					}
+					cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
 				}
 
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
@@ -843,7 +834,7 @@ public:
 					{ pDepthBuffer->pTexture, RESOURCE_STATE_SHADER_RESOURCE }
 				};
 
-				cmdResourceBarrier(cmd, 0, nullptr, 5, textureBarriers, false);
+				cmdResourceBarrier(cmd, 0, nullptr, 5, textureBarriers);
 
 				loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
 				cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
@@ -851,27 +842,8 @@ public:
 				cmdSetScissor(cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth, pSwapChainRenderTarget->mDesc.mHeight);
 
 				{
-					DescriptorData params[9] = {};
-					params[0].pName = "depthBuffer";
-					params[0].ppTextures = &pDepthBuffer->pTexture;
-					params[1].pName = "albedoSpec";
-					params[1].ppTextures = &RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::AlbedoSpecular]->pTexture;
-					params[2].pName = "normal";
-					params[2].ppTextures = &RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::Normal]->pTexture;
-					params[3].pName = "position";
-					params[3].ppTextures = &RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::Position]->pTexture;
-					params[4].pName = "LightData";
-					params[4].ppBuffers = &pLightBuffer;
-					params[5].pName = "DirectionalLights";
-					params[5].ppBuffers = &lightBuffers.pDirLightsBuffer;
-					params[6].pName = "PointLights";
-					params[6].ppBuffers = &lightBuffers.pPointLightsBuffer;
-					params[7].pName = "SpotLights";
-					params[7].ppBuffers = &lightBuffers.pSpotLightsBuffer;
-					params[8].pName = "uniformData";
-					params[8].ppBuffers = &pDefferedUBOs[gFrameIndex];
-
-					cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Deffered]->pRootSignature, 9, params);
+					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Deffered]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Deffered]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
 
 					Buffer* pVertexBuffers[] = { quads.vertexBuffer };
 					cmdBindVertexBuffer(cmd, 1, pVertexBuffers, NULL);
@@ -919,7 +891,7 @@ public:
 
 					gAppUI.Gui(pGui);
 
-					cmdDrawProfiler(cmd);
+					cmdDrawProfiler();
 
 					gAppUI.Draw(cmd);
 					cmdBindRenderTargets(cmd, 0, NULL, NULL, NULL, NULL, NULL, -1, -1);
@@ -927,7 +899,7 @@ public:
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
 				textureBarriers[0] = { pSwapChainRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
-				cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
+				cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers);
 			}
 			cmdEndGpuFrameProfile(cmd, pGpuProfiler);
 			endCmd(cmd);
@@ -976,17 +948,17 @@ public:
 			rtDesc.mSampleQuality = 0;
 
 			// Color + Specular
-			rtDesc.mFormat = ImageFormat::RGBA8;
+			rtDesc.mFormat = TinyImageFormat_R8G8B8A8_SNORM;
 			::addRenderTarget(pRenderer, &rtDesc, &rendertarget);
 			RenderPasses[RenderPass::GPass]->RenderTargets.push_back(rendertarget);
 
 			// Normal
-			rtDesc.mFormat = ImageFormat::RGBA8S;
+			rtDesc.mFormat = TinyImageFormat_R8G8B8A8_SNORM;
 			::addRenderTarget(pRenderer, &rtDesc, &rendertarget);
 			RenderPasses[RenderPass::GPass]->RenderTargets.push_back(rendertarget);
 
 			// Position
-			rtDesc.mFormat = ImageFormat::RGBA8S;
+			rtDesc.mFormat = TinyImageFormat_R8G8B8A8_SNORM;
 			::addRenderTarget(pRenderer, &rtDesc, &rendertarget);
 			RenderPasses[RenderPass::GPass]->RenderTargets.push_back(rendertarget);
 		}
@@ -997,7 +969,7 @@ public:
 			rtDesc.mArraySize = 1;
 			rtDesc.mClearValue.depth = 1.0f;
 			rtDesc.mClearValue.stencil = 0.0f;
-			rtDesc.mFormat = ImageFormat::D32F;
+			rtDesc.mFormat = TinyImageFormat_D32_SFLOAT;
 			rtDesc.mDepth = 1;
 			rtDesc.mWidth = mSettings.mWidth;
 			rtDesc.mHeight = mSettings.mHeight;
@@ -1015,25 +987,25 @@ public:
 			vertexLayout.mAttribCount = 3;
 
 			vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
-			vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
+			vertexLayout.mAttribs[0].mFormat = TinyImageFormat_R32G32B32A32_SFLOAT;
 			vertexLayout.mAttribs[0].mBinding = 0;
 			vertexLayout.mAttribs[0].mLocation = 0;
 			vertexLayout.mAttribs[0].mOffset = 0;
 
 			vertexLayout.mAttribs[1].mSemantic = SEMANTIC_NORMAL;
-			vertexLayout.mAttribs[1].mFormat = ImageFormat::RGB32F;
+			vertexLayout.mAttribs[1].mFormat = TinyImageFormat_R32G32B32A32_SFLOAT;
 			vertexLayout.mAttribs[1].mBinding = 1;
 			vertexLayout.mAttribs[1].mLocation = 1;
 			vertexLayout.mAttribs[1].mOffset = 0;
 
 			vertexLayout.mAttribs[2].mSemantic = SEMANTIC_TEXCOORD0;
-			vertexLayout.mAttribs[2].mFormat = ImageFormat::RG32F;
+			vertexLayout.mAttribs[2].mFormat = TinyImageFormat_R32G32_SFLOAT;
 			vertexLayout.mAttribs[2].mBinding = 2;
 			vertexLayout.mAttribs[2].mLocation = 2;
 			vertexLayout.mAttribs[2].mOffset = 0;
 
 			//set up g-prepass buffer formats
-			ImageFormat::Enum deferredFormats[GBufferRT::COUNT] = {};
+			TinyImageFormat deferredFormats[GBufferRT::COUNT] = {};
 			bool              deferredSrgb[GBufferRT::COUNT] = {};
 			for (uint32_t i = 0; i < GBufferRT::COUNT; ++i)
 			{
@@ -1048,7 +1020,6 @@ public:
 			pipelineSettings.mRenderTargetCount = 3;
 			pipelineSettings.pDepthState = pDepthDefault;
 			pipelineSettings.pColorFormats = deferredFormats;
-			pipelineSettings.pSrgbValues = deferredSrgb;
 			pipelineSettings.mSampleCount = RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mSampleCount;
 			pipelineSettings.mSampleQuality = RenderPasses[RenderPass::GPass]->RenderTargets[0]->mDesc.mSampleQuality;
 			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
@@ -1066,13 +1037,13 @@ public:
 			vertexLayout.mAttribCount = 2;
 
 			vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
-			vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
+			vertexLayout.mAttribs[0].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
 			vertexLayout.mAttribs[0].mBinding = 0;
 			vertexLayout.mAttribs[0].mLocation = 0;
 			vertexLayout.mAttribs[0].mOffset = 0;
 
 			vertexLayout.mAttribs[1].mSemantic = SEMANTIC_TEXCOORD0;
-			vertexLayout.mAttribs[1].mFormat = ImageFormat::RG32F;
+			vertexLayout.mAttribs[1].mFormat = TinyImageFormat_R32G32_SFLOAT;
 			vertexLayout.mAttribs[1].mBinding = 0;
 			vertexLayout.mAttribs[1].mLocation = 1;
 			vertexLayout.mAttribs[1].mOffset = sizeof(float) * 3;
@@ -1084,7 +1055,6 @@ public:
 			pipelineSettings.mRenderTargetCount = 1;
 			pipelineSettings.pDepthState = pDepthNone;
 			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
-			pipelineSettings.pSrgbValues = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSrgb;
 			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
 			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
 			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Deffered]->pRootSignature;
@@ -1101,13 +1071,13 @@ public:
 			vertexLayout.mAttribCount = 2;
 
 			vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
-			vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
+			vertexLayout.mAttribs[0].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
 			vertexLayout.mAttribs[0].mBinding = 0;
 			vertexLayout.mAttribs[0].mLocation = 0;
 			vertexLayout.mAttribs[0].mOffset = 0;
 
 			vertexLayout.mAttribs[1].mSemantic = SEMANTIC_TEXCOORD0;
-			vertexLayout.mAttribs[1].mFormat = ImageFormat::RG32F;
+			vertexLayout.mAttribs[1].mFormat = TinyImageFormat_R32G32_SFLOAT;
 			vertexLayout.mAttribs[1].mBinding = 0;
 			vertexLayout.mAttribs[1].mLocation = 1;
 			vertexLayout.mAttribs[1].mOffset = sizeof(float) * 3;
@@ -1119,7 +1089,6 @@ public:
 			pipelineSettings.mRenderTargetCount = 1;
 			pipelineSettings.pDepthState = pDepthNone;
 			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
-			pipelineSettings.pSrgbValues = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSrgb;
 			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
 			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
 			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Deffered]->pRootSignature;
@@ -1147,6 +1116,57 @@ public:
 		p = d + lookAt;
 		pCameraController->moveTo(p);
 		pCameraController->lookAt(lookAt);
+	}
+	
+	void PrepareDescriptorSets()
+	{
+		// GBUFFER Descriptor Sets
+		{
+			// DESCRIPTOR_UPDATE_FREQ_NONE
+			DescriptorData params[2] = {};
+			params[0].pName = "Texture";
+			params[0].ppTextures = &textures.pTextureColor;
+			params[1].pName = "TextureSpecular";
+			params[1].ppTextures = &textures.pTextureSpecular;
+			updateDescriptorSet(pRenderer, 0, RenderPasses[RenderPass::GPass]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE], 2, params);
+
+			// DESCRIPTOR_UPDATE_FREQ_PER_FRAME
+			for (uint32_t i = 0; i < gImageCount; ++i)
+			{
+				DescriptorData params[1] = {};
+				params[0].pName = "UniformData";
+				params[0].ppBuffers = &pOffscreenUBOs[i];
+				updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::GPass]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
+			}
+		}
+
+		// Deffered and Debug Descriptor Sets
+		{
+			// DESCRIPTOR_UPDATE_FREQ_PER_FRAME
+
+			DescriptorData params[8] = {};
+			params[0].pName = "albedoSpec";
+			params[0].ppTextures = &RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::AlbedoSpecular]->pTexture;
+			params[1].pName = "normal";
+			params[1].ppTextures = &RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::Normal]->pTexture;
+			params[2].pName = "position";
+			params[2].ppTextures = &RenderPasses[RenderPass::GPass]->RenderTargets[GBufferRT::Position]->pTexture;
+			params[3].pName = "LightData";
+			params[3].ppBuffers = &pLightBuffer;
+			params[4].pName = "DirectionalLights";
+			params[4].ppBuffers = &lightBuffers.pDirLightsBuffer;
+			params[5].pName = "PointLights";
+			params[5].ppBuffers = &lightBuffers.pPointLightsBuffer;
+			params[6].pName = "SpotLights";
+			params[6].ppBuffers = &lightBuffers.pSpotLightsBuffer;
+
+			for (uint32_t i = 0; i < gImageCount; ++i)
+			{
+				params[7].pName = "uniformData";
+				params[7].ppBuffers = &pDefferedUBOs[gFrameIndex];
+				updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::GPass]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 8, params);
+			}
+		}
 	}
 
 	void GenerateQuads()

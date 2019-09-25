@@ -39,8 +39,6 @@ SwapChain* pSwapChain = NULL;
 
 uint32_t			gFrameIndex = 0;
 
-DescriptorBinder* pDescriptorBinder = NULL;
-
 bool           gMicroProfiler = false;
 bool           bPrevToggleMicroProfiler = false;
 
@@ -54,7 +52,8 @@ TextDrawDesc gFrameTimeDraw = TextDrawDesc(0, 0xff00ffff, 18);
 RenderTarget* pDepthBuffer;
 
 RasterizerState* pRasterDefault = NULL;
-DepthState* pDepthStencilState = NULL;
+DepthState* pDepthStateToon = NULL;
+DepthState* pDepthStateOutline = NULL;
 DepthState* pDepthDefault = NULL;
 DepthState* pDepthNone = NULL;
 
@@ -63,6 +62,7 @@ class RenderPassData
 public:
 	Shader* pShader;
 	RootSignature* pRootSignature;
+	DescriptorSet* pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_COUNT];
 	Pipeline* pPipeline;
 	CmdPool* pCmdPool;
 	Cmd** ppCmds;
@@ -186,11 +186,6 @@ public:
 		// Resource Loading
 		initResourceLoaderInterface(pRenderer);
 
-		// Initialize profile
-		initProfiler(pRenderer);
-
-		addGpuProfiler(pRenderer, pGraphicsQueue, &pGpuProfiler, "GpuProfiler");
-
 		// Shader
 		ShaderLoadDesc shaderDesc = {};
 		shaderDesc.mStages[0] = { "toon.vert", NULL, 0, FSR_SrcShaders };
@@ -219,7 +214,28 @@ public:
 			addDepthState(pRenderer, &depthStateDesc, &pDepthNone);
 
 			depthStateDesc = {};
-			addDepthState(pRenderer, &depthStateDesc, &pDepthStencilState);
+			depthStateDesc.mDepthTest = true;
+			depthStateDesc.mDepthTest = true;
+			depthStateDesc.mDepthWrite = true;
+			depthStateDesc.mDepthFunc = CMP_LEQUAL;
+
+			depthStateDesc.mStencilTest = true;
+
+			depthStateDesc.mDepthBackFail = STENCIL_OP_INCR;
+			depthStateDesc.mStencilBackFail = STENCIL_OP_INCR;
+			depthStateDesc.mStencilBackPass = STENCIL_OP_INCR;
+			depthStateDesc.mStencilBackFunc = CMP_ALWAYS;
+
+			depthStateDesc.mDepthFrontFail = depthStateDesc.mDepthBackFail;
+			depthStateDesc.mStencilFrontFail = depthStateDesc.mStencilBackFail;
+			depthStateDesc.mStencilFrontPass = depthStateDesc.mStencilBackPass;
+			depthStateDesc.mStencilFrontFunc = depthStateDesc.mStencilBackFunc;
+
+			depthStateDesc.mStencilReadMask = 0xff;
+			depthStateDesc.mStencilWriteMask = 0xff;
+
+
+			addDepthState(pRenderer, &depthStateDesc, &pDepthStateToon);
 		}
 
 		// Static Samplers
@@ -248,12 +264,10 @@ public:
 			}
 		}
 
-		DescriptorBinderDesc descriptorBinderDescs[1] =
-		{
-			{ RenderPasses[RenderPass::Forward]->pRootSignature }
-		};
-
-		addDescriptorBinder(pRenderer, 0, 1, descriptorBinderDescs, &pDescriptorBinder);
+		DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Forward]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
+		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Forward]->pDescriptorSets[0]);
+		setDesc = { RenderPasses[RenderPass::Forward]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
+		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Forward]->pDescriptorSets[1]);
 
 		// Create Uniform Buffers
 		{
@@ -311,31 +325,27 @@ public:
 		if (!initInputSystem(pWindow))
 			return false;
 
-		// Microprofiler Actions
-		// #TODO: Remove this once the profiler UI is ported to use our UI system
-		InputActionDesc actionDesc = { InputBindings::FLOAT_LEFTSTICK, [](InputActionContext* ctx) { onProfilerButton(false, &ctx->mFloat2, true); return !gMicroProfiler; } };
-		addInputAction(&actionDesc);
-		actionDesc = { InputBindings::BUTTON_SOUTH, [](InputActionContext* ctx) { onProfilerButton(ctx->mBool, ctx->pPosition, false); return true; } };
-		addInputAction(&actionDesc);
+		// Initialize microprofiler and it's UI.
+		initProfiler();
+
+		// Gpu profiler can only be added after initProfile.
+		addGpuProfiler(pRenderer, pGraphicsQueue, &pGpuProfiler, "GpuProfiler");
 
 		// App Actions
-		actionDesc = { InputBindings::BUTTON_FULLSCREEN, [](InputActionContext* ctx) { toggleFullscreen(((IApp*)ctx->pUserData)->pWindow); return true; }, this };
+		InputActionDesc actionDesc = { InputBindings::BUTTON_FULLSCREEN, [](InputActionContext* ctx) { toggleFullscreen(((IApp*)ctx->pUserData)->pWindow); return true; }, this };
 		addInputAction(&actionDesc);
-
 		actionDesc = { InputBindings::BUTTON_EXIT, [](InputActionContext* ctx) { requestShutdown(); return true; } };
 		addInputAction(&actionDesc);
-
 		actionDesc =
 		{
 			InputBindings::BUTTON_ANY, [](InputActionContext* ctx)
 			{
-				bool capture = gAppUI.OnButton(ctx->mBinding, ctx->mBool, ctx->pPosition, !gMicroProfiler);
+				bool capture = gAppUI.OnButton(ctx->mBinding, ctx->mBool, ctx->pPosition);
 				setEnableCaptureInput(capture && INPUT_ACTION_PHASE_CANCELED != ctx->mPhase);
 				return true;
 			}, this
 		};
 		addInputAction(&actionDesc);
-
 		typedef bool (*CameraInputHandler)(InputActionContext * ctx, uint32_t index);
 		static CameraInputHandler onCameraInput = [](InputActionContext* ctx, uint32_t index)
 		{
@@ -384,6 +394,10 @@ public:
 			if (!pass)
 				continue;
 
+			for (uint32_t i = 0; i < DESCRIPTOR_UPDATE_FREQ_COUNT; ++i)
+				if (pass->pDescriptorSets[i])
+					removeDescriptorSet(pRenderer, pass->pDescriptorSets[i]);
+
 			for (RenderTarget* rt : pass->RenderTargets)
 			{
 				removeRenderTarget(pRenderer, rt);
@@ -406,6 +420,7 @@ public:
 			removeShader(pRenderer, pass->pShader);
 
 			removeRootSignature(pRenderer, pass->pRootSignature);
+
 			pass->~RenderPassData();
 			conf_free(pass);
 		}
@@ -422,8 +437,6 @@ public:
 		}
 
 		removeResource(textures.model.colorMap);
-
-		removeDescriptorBinder(pRenderer, pDescriptorBinder);
 
 		removeRasterizerState(pRasterDefault);
 		removeDepthState(pDepthDefault);
@@ -454,9 +467,11 @@ public:
 		if (!gVirtualJoystick.Load(pSwapChain->ppSwapchainRenderTargets[0]))
 			return false;
 
-		loadProfiler(pSwapChain->ppSwapchainRenderTargets[0]);
+		loadProfiler(&gAppUI, mSettings.mWidth, mSettings.mHeight);
 
 		CreatePipelines();
+		
+		PrepareDescriptorSets();
 
 		return true;
 	}
@@ -527,11 +542,7 @@ public:
 
 		if (gMicroProfiler != bPrevToggleMicroProfiler)
 		{
-			Profile& S = *ProfileGet();
-			int nValue = gMicroProfiler ? 1 : 0;
-			nValue = nValue >= 0 && nValue < P_DRAW_SIZE ? nValue : S.nDisplay;
-			S.nDisplay = nValue;
-
+			toggleProfiler();
 			bPrevToggleMicroProfiler = gMicroProfiler;
 		}
 
@@ -561,8 +572,9 @@ public:
 		loadActions.mClearColorValues[0].b = 0.0f;
 		loadActions.mClearColorValues[0].a = 0.0f;
 		loadActions.mLoadActionDepth = LOAD_ACTION_CLEAR;
+		loadActions.mLoadActionStencil = LOAD_ACTION_CLEAR;
 		loadActions.mClearDepth.depth = 1.0f;
-		loadActions.mClearDepth.stencil = 0;
+		loadActions.mClearDepth.stencil = 1.0;
 
 		// Forward Pass
 		Cmd* cmd = RenderPasses[RenderPass::Forward]->ppCmds[gFrameIndex];
@@ -579,63 +591,56 @@ public:
 					{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
 				};
 
-				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers, false);
+				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
 
 				cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, pDepthBuffer, &loadActions, NULL, NULL, -1, -1);
 				cmdSetViewport(cmd, 0.0f, 0.0f, (float)pSwapChainRenderTarget->mDesc.mWidth, (float)pSwapChainRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
 				cmdSetScissor(cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth, pSwapChainRenderTarget->mDesc.mHeight);
 
+				cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+
+				cmdBindPipeline(cmd, RenderPasses[RenderPass::Forward]->pPipeline);
 				{
-					DescriptorData params[1] = {};
-					params[0].pName = "UniformData";
-					params[0].ppBuffers = &pUniformBuffers[gFrameIndex];
-
-					cmdBindDescriptors(cmd, pDescriptorBinder, RenderPasses[RenderPass::Forward]->pRootSignature, 1, params);
-
-					cmdBindPipeline(cmd, RenderPasses[RenderPass::Forward]->pPipeline);
+					for (int i = 0; i < sceneData.meshes.size(); ++i)
 					{
-						for (int i = 0; i < sceneData.meshes.size(); ++i)
-						{
-							Buffer* pVertexBuffers[] = { sceneData.meshes[i]->pPositionStream, sceneData.meshes[i]->pNormalStream };
-							cmdBindVertexBuffer(cmd, 2, pVertexBuffers, NULL);
-							cmdBindIndexBuffer(cmd, sceneData.meshes[i]->pIndicesStream, 0);
-							cmdDrawIndexed(cmd, sceneData.meshes[i]->mCountIndices, 0, 0);
-						}
+						Buffer* pVertexBuffers[] = { sceneData.meshes[i]->pPositionStream, sceneData.meshes[i]->pNormalStream };
+						cmdBindVertexBuffer(cmd, 2, pVertexBuffers, NULL);
+						cmdBindIndexBuffer(cmd, sceneData.meshes[i]->pIndicesStream, 0);
+						cmdDrawIndexed(cmd, sceneData.meshes[i]->mCountIndices, 0, 0);
 					}
 				}
 
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
+
 				loadActions = {};
 				loadActions.mLoadActionsColor[0] = LOAD_ACTION_LOAD;
 				cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
 				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw UI", true);
-				{
-					static HiresTimer gTimer;
-					gTimer.GetUSec(true);
+				static HiresTimer gTimer;
+				gTimer.GetUSec(true);
 
-					gVirtualJoystick.Draw(cmd, { 1.0f, 1.0f, 1.0f, 1.0f });
+				gVirtualJoystick.Draw(cmd, { 1.0f, 1.0f, 1.0f, 1.0f });
 
-					gAppUI.DrawText(cmd, float2(8, 15), eastl::string().sprintf("CPU %f ms", gTimer.GetUSecAverage() / 1000.0f).c_str(), &gFrameTimeDraw);
+				gAppUI.DrawText(cmd, float2(8, 15), eastl::string().sprintf("CPU %f ms", gTimer.GetUSecAverage() / 1000.0f).c_str(), &gFrameTimeDraw);
 
 #if !defined(__ANDROID__)
-					gAppUI.DrawText(
-						cmd, float2(8, 40), eastl::string().sprintf("GPU %f ms", (float)pGpuProfiler->mCumulativeTime * 1000.0f).c_str(),
-						&gFrameTimeDraw);
-					gAppUI.DrawDebugGpuProfile(cmd, float2(8, 65), pGpuProfiler, NULL);
+				gAppUI.DrawText(
+					cmd, float2(8, 40), eastl::string().sprintf("GPU %f ms", (float)pGpuProfiler->mCumulativeTime * 1000.0f).c_str(),
+					&gFrameTimeDraw);
+				gAppUI.DrawDebugGpuProfile(cmd, float2(8, 65), pGpuProfiler, NULL);
 #endif
 
-					gAppUI.Gui(pGui);
+				cmdDrawProfiler();
 
-					cmdDrawProfiler(cmd);
+				gAppUI.Gui(pGui);
 
-					gAppUI.Draw(cmd);
-					cmdBindRenderTargets(cmd, 0, NULL, NULL, NULL, NULL, NULL, -1, -1);
-				}
+				gAppUI.Draw(cmd);
+				cmdBindRenderTargets(cmd, 0, NULL, NULL, NULL, NULL, NULL, -1, -1);
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
 				textureBarriers[0] = { pSwapChainRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
-				cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers, true);
+				cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers);
 			}
 			cmdEndGpuFrameProfile(cmd, pGpuProfiler);
 			endCmd(cmd);
@@ -676,8 +681,8 @@ public:
 			RenderTargetDesc rtDesc = {};
 			rtDesc.mArraySize = 1;
 			rtDesc.mClearValue.depth = 1.0f;
-			rtDesc.mClearValue.stencil = 0.0f;
-			rtDesc.mFormat = ImageFormat::D32F;
+			rtDesc.mClearValue.stencil = 1.0;
+			rtDesc.mFormat = TinyImageFormat_D32_SFLOAT;
 			rtDesc.mDepth = 1;
 			rtDesc.mWidth = mSettings.mWidth;
 			rtDesc.mHeight = mSettings.mHeight;
@@ -695,13 +700,13 @@ public:
 			vertexLayout.mAttribCount = 2;
 
 			vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
-			vertexLayout.mAttribs[0].mFormat = ImageFormat::RGB32F;
+			vertexLayout.mAttribs[0].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
 			vertexLayout.mAttribs[0].mBinding = 0;
 			vertexLayout.mAttribs[0].mLocation = 0;
 			vertexLayout.mAttribs[0].mOffset = 0;
 
 			vertexLayout.mAttribs[1].mSemantic = SEMANTIC_NORMAL;
-			vertexLayout.mAttribs[1].mFormat = ImageFormat::RGB32F;
+			vertexLayout.mAttribs[1].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
 			vertexLayout.mAttribs[1].mBinding = 1;
 			vertexLayout.mAttribs[1].mLocation = 1;
 			vertexLayout.mAttribs[1].mOffset = 0;
@@ -712,8 +717,8 @@ public:
 			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
 			pipelineSettings.mRenderTargetCount = 1;
 			pipelineSettings.pDepthState = pDepthDefault;
+			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
 			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
-			pipelineSettings.pSrgbValues = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSrgb;
 			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
 			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
 			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Forward]->pRootSignature;
@@ -741,6 +746,17 @@ public:
 		p = d + lookAt;
 		pCameraController->moveTo(p);
 		pCameraController->lookAt(lookAt);
+	}
+	
+	void PrepareDescriptorSets()
+	{
+		for (uint32_t i = 0; i < gImageCount; ++i)
+		{
+			DescriptorData params[1] = {};
+			params[0].pName = "UniformData";
+			params[0].ppBuffers = &pUniformBuffers[i];
+			updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
+		}
 	}
 
 	void GenerateQuads()

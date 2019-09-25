@@ -30,11 +30,11 @@ struct SpotLight
     float3 att_params;
 };
 
-StructuredBuffer <DirectionalLight> DirectionalLights	: register(t5);
-StructuredBuffer <PointLight>		PointLights			: register(t6);
-StructuredBuffer <SpotLight>		SpotLights			: register(t7);
+StructuredBuffer <DirectionalLight> DirectionalLights	: register(t5, UPDATE_FREQ_PER_DRAW);
+StructuredBuffer <PointLight>		PointLights			: register(t6, UPDATE_FREQ_PER_DRAW);
+StructuredBuffer <SpotLight>		SpotLights			: register(t7, UPDATE_FREQ_PER_DRAW);
 
-cbuffer LightData : register(b0)
+cbuffer LightData : register(b0, UPDATE_FREQ_PER_FRAME)
 {
 	int numDirectionalLights;
 	int numPointLights;
@@ -42,10 +42,10 @@ cbuffer LightData : register(b0)
 	float3 viewPos;
 };
 
-Texture2D			depthBuffer		: register(t1);
-Texture2D			albedoSpec		: register(t2);
-Texture2D			normal			: register(t3);
-Texture2D			position		: register(t4);
+Texture2D			depthBuffer		: register(t1, UPDATE_FREQ_PER_FRAME);
+Texture2D			albedoSpec		: register(t2, UPDATE_FREQ_PER_FRAME);
+Texture2D			normal			: register(t3, UPDATE_FREQ_PER_FRAME);
+Texture2D			position		: register(t4, UPDATE_FREQ_PER_FRAME);
 SamplerState		uSampler0	: register(s0);
 
 struct VSOutput 
