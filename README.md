@@ -12,14 +12,20 @@
   - [x] [Load Model](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/05_LoadingModel)
   - [x] [Gooch Shading](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/06_GoochShading)
   - [x] Profiling and UI
-  - [x] **Deferred Lighting**
-  - [ ] Mirror Reflection
-  - [ ] Image Space Effect
+  - [x] [**Deferred Lighting**](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/07_DefferedLighting)
+  - [ ] Environmental Mapping
+    - [ ] Cube Map Reflections
+    - [ ] Spherical Map Reflections
+  - [ ] Tessellation
   - [ ] Normal Mapping
   - [ ] Parallax Mapping
   - [ ] Stencil Buffer Toon Shading
   - [ ] Shadow Mapping
   - [ ] [Ambient Occlusion](https://github.com/Erfan-Ahmadi/AmbientOcclusion)
+  - [ ] LOD
+  - [ ] Occlusion Query
+  - [ ] Bloom
+  - [ ] Motion Blur
   - [ ] Gamma Correction
   - [ ] Tone Mapping / HDR
   
