@@ -270,12 +270,12 @@ public:
 		queueDesc.mFlag = QUEUE_FLAG_NONE;
 		addQueue(pRenderer, &queueDesc, &pGraphicsQueue);
 
-		//Gbuffer pass
+		// Gbuffer pass
 		RenderPassData* pass =
 			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), pRenderer, pGraphicsQueue, gImageCount);
 		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::GPass, pass));
 
-		//Shadow pass
+		// Deffered pass
 		pass =
 			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), pRenderer, pGraphicsQueue, gImageCount);
 		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Deffered, pass));

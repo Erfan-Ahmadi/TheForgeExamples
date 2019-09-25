@@ -132,7 +132,7 @@ float3 calculatePointLight(PointLight pointLight, float3 normal, float3 viewDir,
 	float3 diffuse = diff * pointLight.diffuse;
 
 	// Specular
-	float spec = pow(max(dot(reflectDir, viewDir), 0.0), 64);
+	float spec = pow(max(dot(reflectDir, viewDir), 0.0), 32);
 	float3 specularLight = spec * pointLight.specular;  
 	
 	return attenuation * ((ambient + diffuse) * albedo + (specularLight) * float3(specular, specular, specular));
@@ -162,7 +162,7 @@ float3 calculateSpotLight(SpotLight spotLight, float3 normal, float3 viewDir, fl
 	float3 diffuse = diff * spotLight.diffuse * intensity;
 
 	// Specular
-	float spec = pow(max(dot(halfwayDir, normal), 0.0), 64);
+	float spec = pow(max(dot(halfwayDir, normal), 0.0), 32);
 	float3 specularLight = spec * spotLight.specular * intensity;  
 	
 	return attenuation * ((ambient + diffuse) * albedo + (specularLight) * float3(specular, specular, specular));
