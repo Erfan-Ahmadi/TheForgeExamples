@@ -248,10 +248,10 @@ const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
 
-class DefferedLighting : public IApp
+class DeferredLighting : public IApp
 {
 public:
-	DefferedLighting()
+	DeferredLighting()
 	{
 	}
 
@@ -1356,4 +1356,4 @@ public:
 	}
 };
 
-DEFINE_APPLICATION_MAIN(DefferedLighting)
+DEFINE_APPLICATION_MAIN(DeferredLighting)

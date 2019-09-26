@@ -43,13 +43,14 @@
     <None Include="..\..\..\src\07_DefferedLighting\Shaders\Vulkan\profile.vert" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\src\07_DefferedLighting\DefferedLighting.cpp" />
+    <ClCompile Include="..\..\..\src\07_DefferedLighting\DeferredLighting.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{68f3f1ac-1c97-4c22-a01a-334ee7439c72}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>_07_DefferedLighting</RootNamespace>
     <WindowsTargetPlatformVersion>10.0.17763.0</WindowsTargetPlatformVersion>
+    <ProjectName>07_DeferredLighting</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugVk|x64'" Label="Configuration">

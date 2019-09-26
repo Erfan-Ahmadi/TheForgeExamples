@@ -59,7 +59,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\src\07_DefferedLighting\DefferedLighting.cpp">
+    <ClCompile Include="..\..\..\src\07_DefferedLighting\DeferredLighting.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
