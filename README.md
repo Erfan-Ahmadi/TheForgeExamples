@@ -12,14 +12,16 @@
   - [x] [Load Model](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/05_LoadingModel)
   - [x] [Gooch Shading](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/06_GoochShading)
   - [x] Profiling and UI
-  - [x] [**Deferred Lighting**](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/07_DefferedLighting)
+  - [x] [Deferred Lighting](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/07_DefferedLighting)
+  - [x] [Stencil Buffer Toon Shading](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/08_ToonShading)
+  - [ ] Tessellation
+    - [ ] Passthrough
+    - [ ] PN-Triangles
   - [ ] Environmental Mapping
     - [ ] Cube Map Reflections
     - [ ] Spherical Map Reflections
-  - [ ] Tessellation
   - [ ] Normal Mapping
   - [ ] Parallax Mapping
-  - [ ] Stencil Buffer Toon Shading
   - [ ] Shadow Mapping
   - [ ] [Ambient Occlusion](https://github.com/Erfan-Ahmadi/AmbientOcclusion)
   - [ ] LOD
@@ -36,7 +38,7 @@
   <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/instancing.gif" alt="" width="300" height="200" />
 </p>
 
-#### 2. Blinn-Phon Lightmapping
+#### 2. Blinn-Phong Lightmapping
 <p align="center">
   <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/lightmapping.gif" alt="" width="300" height="200" />
 </p>
@@ -44,6 +46,11 @@
 #### 3. Deffered Lighting
 <p align="center">
   <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/deffered.gif" alt="" width="300" height="200" />
+</p>
+
+#### 4. Toon Shading
+<p align="center">
+  <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/toonshade.gif" alt="" width="300" height="200" />
 </p>
 
 ### Build
