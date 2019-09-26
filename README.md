@@ -14,10 +14,12 @@
   - [x] Profiling and UI
   - [x] [Deferred Lighting](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/07_DefferedLighting)
   - [x] [Stencil Buffer Toon Shading](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/08_ToonShading)
+  - [ ] Tessellation
+    - [ ] Passthrough
+    - [ ] PN-Triangles
   - [ ] Environmental Mapping
     - [ ] Cube Map Reflections
     - [ ] Spherical Map Reflections
-  - [ ] Tessellation
   - [ ] Normal Mapping
   - [ ] Parallax Mapping
   - [ ] Shadow Mapping
