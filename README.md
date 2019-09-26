@@ -43,7 +43,7 @@
   <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/lightmapping.gif" alt="" width="300" height="200" />
 </p>
 
-#### 3. Deffered Lighting
+#### 3. Deferred Lighting
 <p align="center">
   <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/deffered.gif" alt="" width="300" height="200" />
 </p>
