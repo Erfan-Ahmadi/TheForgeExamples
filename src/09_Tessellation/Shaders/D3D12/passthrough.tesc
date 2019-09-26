@@ -45,7 +45,7 @@ HS_CONSTANT_DATA_OUTPUT PatchConstantFunction(InputPatch<VS_CONTROL_POINT_OUTPUT
 [outputtopology("triangle_ccw")]
 [outputcontrolpoints(3)]
 [patchconstantfunc("PatchConstantFunction")]
-[maxtessfactor(50.0f)]
+[maxtessfactor(10.0f)]
 HullOut main(
 	InputPatch<VS_CONTROL_POINT_OUTPUT, 3> ip,
 	uint invocationID : SV_OutputControlPointID)

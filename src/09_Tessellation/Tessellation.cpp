@@ -94,7 +94,7 @@ struct
 	mat4	view;
 	mat4	proj;
 	//float3	lightPos = { 0.0f, 1.0f, 2.0f };
-	float tessellationLevel = 0.1f;
+	float tessellationLevel = 1.0f;
 } gUniformData;
 
 Buffer* pUniformBuffers[gImageCount] = { NULL };
@@ -258,7 +258,7 @@ public:
 
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &gMicroProfiler));
 		pGui->AddWidget(CheckboxWidget("Wireframe", &gWireframe));
-		pGui->AddWidget(SliderFloatWidget("Tessellation Level", &gUniformData.tessellationLevel, 0.0f, 50.0f, 0.5f, "%.3f"));
+		pGui->AddWidget(SliderFloatWidget("Tessellation Level", &gUniformData.tessellationLevel, 0.0f, 10.0f, 0.25f, "%.3f"));
 
 		// Camera
 		CameraMotionParameters cmp{ 40.0f, 30.0f, 100.0f };
