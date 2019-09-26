@@ -19,6 +19,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "07_DefferedLighting", "07_D
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "08_ToonShading", "08_ToonShading\08_ToonShading.vcxproj", "{056B15B6-8565-4E97-AE08-7C31E31EF162}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "09_Tessellation", "09_Tessellation\09_Tessellation.vcxproj", "{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		DebugDx|x64 = DebugDx|x64
@@ -125,6 +127,18 @@ Global
 		{056B15B6-8565-4E97-AE08-7C31E31EF162}.ReleaseDx11|x64.Build.0 = ReleaseDx11|x64
 		{056B15B6-8565-4E97-AE08-7C31E31EF162}.ReleaseVk|x64.ActiveCfg = ReleaseVk|x64
 		{056B15B6-8565-4E97-AE08-7C31E31EF162}.ReleaseVk|x64.Build.0 = ReleaseVk|x64
+		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.DebugDx|x64.ActiveCfg = DebugDx|x64
+		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.DebugDx|x64.Build.0 = DebugDx|x64
+		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.DebugDx11|x64.ActiveCfg = DebugDx11|x64
+		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.DebugDx11|x64.Build.0 = DebugDx11|x64
+		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.DebugVk|x64.ActiveCfg = DebugVk|x64
+		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.DebugVk|x64.Build.0 = DebugVk|x64
+		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.ReleaseDx|x64.ActiveCfg = ReleaseDx|x64
+		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.ReleaseDx|x64.Build.0 = ReleaseDx|x64
+		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.ReleaseDx11|x64.ActiveCfg = ReleaseDx11|x64
+		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.ReleaseDx11|x64.Build.0 = ReleaseDx11|x64
+		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.ReleaseVk|x64.ActiveCfg = ReleaseVk|x64
+		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.ReleaseVk|x64.Build.0 = ReleaseVk|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

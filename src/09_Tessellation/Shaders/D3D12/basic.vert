@@ -3,7 +3,7 @@ cbuffer UniformData : register(b0, UPDATE_FREQ_PER_FRAME)
 	float4x4	world;
 	float4x4	view;
 	float4x4	proj;
-	float4		lightPos;
+	float		tessellationLevel;
 };
 
 struct VSInput
@@ -16,7 +16,6 @@ struct VSOutput {
 	float4 Position : SV_POSITION;
 	float4 Normal	: NORMAL;
 	float3 Color	: COLOR;
-	float3 lightDir : LIGHTDIR;
 };
 
  float4x4 inverse(float4x4 input)
@@ -56,10 +55,6 @@ VSOutput main(VSInput input)
 
 	float4 viewSpacePosition = mul(view, mul(world, input.Position));
 	result.Position = mul(proj, viewSpacePosition);
-
-	float3 lightViewSpacePos = mul(view, lightPos.xyz);
-
-	result.lightDir = lightViewSpacePos - viewSpacePosition.xyz;
 
 	result.Color = float3(1.0f, 1.0f, 1.0f);
 

@@ -40,13 +40,8 @@ TextDrawDesc gFrameTimeDraw = TextDrawDesc(0, 0xff00ffff, 18);
 RenderTarget* pDepthBuffer;
 
 RasterizerState* pRasterDefault = NULL;
-DepthState* pDepthStateToon = NULL;
-DepthState* pDepthStateOutline = NULL;
 DepthState* pDepthDefault = NULL;
 DepthState* pDepthNone = NULL;
-
-Shader* pOutlineShader;
-Pipeline* pOutlinePipeline;
 
 class RenderPassData
 {
@@ -72,7 +67,7 @@ struct RenderPass
 {
 	enum Enum
 	{
-		ToonShade
+		Forward
 	};
 };
 
@@ -97,8 +92,8 @@ struct
 	mat4	world;
 	mat4	view;
 	mat4	proj;
-	//float4	lightPos = { 0.0f, 4.0f, 2.0f, 0.0f };
-	float outlineThickness = 0.1f;
+	float3	lightPos = { 0.0f, 1.0f, 2.0f };
+	float tessellationLevel = 0.1f;
 } gUniformData;
 
 Buffer* pUniformBuffers[gImageCount] = { NULL };
@@ -107,7 +102,7 @@ RenderPassMap	RenderPasses;
 
 const char* pszBases[FSR_Count] = {
 	"../../../../src/Shaders/bin",													// FSR_BinShaders
-	"../../../../src/08_ToonShading/",												// FSR_SrcShaders
+	"../../../../src/09_Tessellation/",												// FSR_SrcShaders
 	"../../../../art/",																// FSR_Textures
 	"../../../../art/",																// FSR_Meshes
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
@@ -119,10 +114,10 @@ const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
 
-class ToonShading : public IApp
+class Tessellation : public IApp
 {
 public:
-	ToonShading()
+	Tessellation()
 	{
 	}
 
@@ -143,7 +138,7 @@ public:
 		// Forward Pass
 		RenderPassData* pass =
 			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), pRenderer, pGraphicsQueue, gImageCount);
-		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::ToonShade, pass));
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Forward, pass));
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
@@ -157,17 +152,15 @@ public:
 
 		// Shader
 		ShaderLoadDesc shaderDesc = {};
-		shaderDesc.mStages[0] = { "toon.vert", NULL, 0, FSR_SrcShaders };
-		shaderDesc.mStages[1] = { "toon.frag", NULL, 0, FSR_SrcShaders };
-		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::ToonShade]->pShader);
-		shaderDesc.mStages[0] = { "outline.vert", NULL, 0, FSR_SrcShaders };
-		shaderDesc.mStages[1] = { "outline.frag", NULL, 0, FSR_SrcShaders };
-		addShader(pRenderer, &shaderDesc, &pOutlineShader);
+		shaderDesc.mStages[0] = { "basic.vert", NULL, 0, FSR_SrcShaders };
+		shaderDesc.mStages[1] = { "basic.frag", NULL, 0, FSR_SrcShaders };
+		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Forward]->pShader);
 
 		//Create rasteriser state objects
 		{
 			RasterizerStateDesc rasterizerStateDesc = {};
 			rasterizerStateDesc.mCullMode = CULL_MODE_NONE;
+			rasterizerStateDesc.mFillMode = FILL_MODE_WIREFRAME;
 			addRasterizerState(pRenderer, &rasterizerStateDesc, &pRasterDefault);
 		}
 
@@ -184,50 +177,6 @@ public:
 			depthStateDesc.mDepthWrite = false;
 			depthStateDesc.mDepthFunc = CMP_ALWAYS;
 			addDepthState(pRenderer, &depthStateDesc, &pDepthNone);
-
-			depthStateDesc = {};
-
-			{
-				depthStateDesc.mDepthTest = true;
-				depthStateDesc.mDepthTest = true;
-				depthStateDesc.mDepthWrite = true;
-				depthStateDesc.mDepthFunc = CMP_LEQUAL;
-
-				depthStateDesc.mStencilTest = true;
-
-				depthStateDesc.mDepthBackFail = STENCIL_OP_REPLACE;
-				depthStateDesc.mStencilBackFail = STENCIL_OP_REPLACE;
-				depthStateDesc.mStencilBackPass = STENCIL_OP_REPLACE;
-				depthStateDesc.mStencilBackFunc = CMP_ALWAYS;
-
-				depthStateDesc.mDepthFrontFail = depthStateDesc.mDepthBackFail;
-				depthStateDesc.mStencilFrontFail = depthStateDesc.mStencilBackFail;
-				depthStateDesc.mStencilFrontPass = depthStateDesc.mStencilBackPass;
-				depthStateDesc.mStencilFrontFunc = depthStateDesc.mStencilBackFunc;
-
-				depthStateDesc.mStencilReadMask = 0xFF;
-				depthStateDesc.mStencilWriteMask = 0xFF;
-
-				addDepthState(pRenderer, &depthStateDesc, &pDepthStateToon);
-			}
-
-			{
-				depthStateDesc.mDepthTest = false;
-				depthStateDesc.mDepthWrite = false;
-				depthStateDesc.mStencilTest = true;
-
-				depthStateDesc.mDepthBackFail = STENCIL_OP_KEEP;
-				depthStateDesc.mStencilBackFail = STENCIL_OP_KEEP;
-				depthStateDesc.mStencilBackPass = STENCIL_OP_REPLACE;
-				depthStateDesc.mStencilBackFunc = CMP_NOTEQUAL;
-
-				depthStateDesc.mDepthFrontFail = depthStateDesc.mDepthBackFail;
-				depthStateDesc.mStencilFrontFail = depthStateDesc.mStencilBackFail;
-				depthStateDesc.mStencilFrontPass = depthStateDesc.mStencilBackPass;
-				depthStateDesc.mStencilFrontFunc = depthStateDesc.mStencilBackFunc;
-
-				addDepthState(pRenderer, &depthStateDesc, &pDepthStateOutline);
-			}
 		}
 		// Static Samplers
 		SamplerDesc samplerDesc = { FILTER_LINEAR,
@@ -244,21 +193,21 @@ public:
 		{
 			// Root Signature for Forward Pipeline
 			{
-				Shader* shaders[2] = { RenderPasses[RenderPass::ToonShade]->pShader, pOutlineShader };
+				Shader* shaders[2] = { RenderPasses[RenderPass::Forward]->pShader };
 				RootSignatureDesc rootDesc = {};
-				rootDesc.mShaderCount = 2;
+				rootDesc.mShaderCount = 1;
 				rootDesc.ppShaders = shaders;
 				rootDesc.mStaticSamplerCount = 1;
 				rootDesc.ppStaticSamplerNames = &samplerNames;
 				rootDesc.ppStaticSamplers = &pSampler;
-				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::ToonShade]->pRootSignature);
+				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Forward]->pRootSignature);
 			}
 		}
 
-		DescriptorSetDesc setDesc = { RenderPasses[RenderPass::ToonShade]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
-		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::ToonShade]->pDescriptorSets[0]);
-		setDesc = { RenderPasses[RenderPass::ToonShade]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
-		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::ToonShade]->pDescriptorSets[1]);
+		DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Forward]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
+		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Forward]->pDescriptorSets[0]);
+		setDesc = { RenderPasses[RenderPass::Forward]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
+		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Forward]->pDescriptorSets[1]);
 
 		// Create Uniform Buffers
 		{
@@ -302,7 +251,7 @@ public:
 		pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
 
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &gMicroProfiler));
-		pGui->AddWidget(SliderFloatWidget("Outline Thickness", &gUniformData.outlineThickness, 0.0f, 1.0f, 0.05f, "%.3f"));
+		pGui->AddWidget(SliderFloatWidget("Tessellation Level", &gUniformData.tessellationLevel, 0.0f, 50.0f, 0.5f, "%.3f"));
 
 		// Camera
 		CameraMotionParameters cmp{ 40.0f, 30.0f, 100.0f };
@@ -417,8 +366,6 @@ public:
 
 		RenderPasses.empty();
 
-		removeShader(pRenderer, pOutlineShader);
-
 		for (size_t i = 0; i < sceneData.meshes.size(); ++i)
 		{
 			removeResource(sceneData.meshes[i]->pPositionStream);
@@ -499,8 +446,6 @@ public:
 			}
 		}
 
-		removePipeline(pRenderer, pOutlinePipeline);
-
 		removeRenderTarget(pRenderer, pDepthBuffer);
 		removeSwapChain(pRenderer, pSwapChain);
 		pDepthBuffer = NULL;
@@ -526,8 +471,9 @@ public:
 		gUniformData.proj = projMat;
 
 		// Update Instance Data
-		gUniformData.world = mat4::translation(Vector3(0.0f, -1.5f, 7)) *
-			mat4::rotationY(currentTime) *
+		gUniformData.world = mat4::translation(Vector3(0.0f, -1.5f, 4)) *
+			mat4::rotationY(PI / 4.0f) *
+			mat4::rotationX(PI / 2.0f) *
 			mat4::scale(Vector3(0.4f));
 
 		viewMat.setTranslation(vec3(0));
@@ -564,10 +510,9 @@ public:
 		// Load Actions
 		LoadActionsDesc loadActions = {};
 		loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
-		loadActions.mClearColorValues[0].r = 0.0f;
-		loadActions.mClearColorValues[0].g = 0.0f;
-		loadActions.mClearColorValues[0].g = 0.0f;
-		loadActions.mClearColorValues[0].b = 0.0f;
+		loadActions.mClearColorValues[0].r = 1.0f;
+		loadActions.mClearColorValues[0].g = 1.0f;
+		loadActions.mClearColorValues[0].b = 1.0f;
 		loadActions.mClearColorValues[0].a = 0.0f;
 		loadActions.mLoadActionDepth = LOAD_ACTION_CLEAR;
 		loadActions.mClearDepth.depth = 1.0f;
@@ -575,14 +520,14 @@ public:
 		loadActions.mClearDepth.stencil = 0.0;
 
 		// Forward Pass
-		Cmd* cmd = RenderPasses[RenderPass::ToonShade]->ppCmds[gFrameIndex];
+		Cmd* cmd = RenderPasses[RenderPass::Forward]->ppCmds[gFrameIndex];
 		{
 			RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
 
 			beginCmd(cmd);
 			cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
 			{
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Toon Shading", true);
+				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Tessellation", true);
 
 				TextureBarrier textureBarriers[2] = {
 					{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
@@ -595,14 +540,9 @@ public:
 				cmdSetViewport(cmd, 0.0f, 0.0f, (float)pSwapChainRenderTarget->mDesc.mWidth, (float)pSwapChainRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
 				cmdSetScissor(cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth, pSwapChainRenderTarget->mDesc.mHeight);
 
-				cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::ToonShade]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
-
-#if defined(DIRECT3D12)
-				cmd->pDxCmdList->OMSetStencilRef(1);
-#endif
-				
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Toon Shade", true);
-				cmdBindPipeline(cmd, RenderPasses[RenderPass::ToonShade]->pPipeline);
+				cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+		
+				cmdBindPipeline(cmd, RenderPasses[RenderPass::Forward]->pPipeline);
 				{
 					for (int i = 0; i < sceneData.meshes.size(); ++i)
 					{
@@ -612,23 +552,8 @@ public:
 						cmdDrawIndexed(cmd, sceneData.meshes[i]->mCountIndices, 0, 0);
 					}
 				}
-				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
-				
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Outline", true);
-				cmdBindPipeline(cmd, pOutlinePipeline);
-				{
-					for (int i = 0; i < sceneData.meshes.size(); ++i)
-					{
-						Buffer* pVertexBuffers[] = { sceneData.meshes[i]->pPositionStream, sceneData.meshes[i]->pNormalStream };
-						cmdBindVertexBuffer(cmd, 2, pVertexBuffers, NULL);
-						cmdBindIndexBuffer(cmd, sceneData.meshes[i]->pIndicesStream, 0);
-						cmdDrawIndexed(cmd, sceneData.meshes[i]->mCountIndices, 0, 0);
-					}
-				}
-				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
-
 
 				loadActions = {};
 				loadActions.mLoadActionsColor[0] = LOAD_ACTION_LOAD;
@@ -709,7 +634,7 @@ public:
 
 	void CreatePipelines()
 	{
-		// Toon Shade
+		// Forward
 		{
 			VertexLayout vertexLayout = {};
 			vertexLayout.mAttribCount = 2;
@@ -731,56 +656,21 @@ public:
 			GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
 			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
 			pipelineSettings.mRenderTargetCount = 1;
-			pipelineSettings.pDepthState = pDepthStateToon;
+			pipelineSettings.pDepthState = pDepthDefault;
 			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
 			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
 			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
 			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
-			pipelineSettings.pRootSignature = RenderPasses[RenderPass::ToonShade]->pRootSignature;
-			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::ToonShade]->pShader;
+			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Forward]->pRootSignature;
+			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::Forward]->pShader;
 			pipelineSettings.pVertexLayout = &vertexLayout;
 			pipelineSettings.pRasterizerState = pRasterDefault;
 
-			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::ToonShade]->pPipeline);
-		}
-
-		// Outline
-		{
-			VertexLayout vertexLayout = {};
-			vertexLayout.mAttribCount = 2;
-
-			vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
-			vertexLayout.mAttribs[0].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
-			vertexLayout.mAttribs[0].mBinding = 0;
-			vertexLayout.mAttribs[0].mLocation = 0;
-			vertexLayout.mAttribs[0].mOffset = 0;
-
-			vertexLayout.mAttribs[1].mSemantic = SEMANTIC_NORMAL;
-			vertexLayout.mAttribs[1].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
-			vertexLayout.mAttribs[1].mBinding = 1;
-			vertexLayout.mAttribs[1].mLocation = 1;
-			vertexLayout.mAttribs[1].mOffset = 0;
-
-			PipelineDesc desc = {};
-			desc.mType = PIPELINE_TYPE_GRAPHICS;
-			GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
-			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
-			pipelineSettings.mRenderTargetCount = 1;
-			pipelineSettings.pDepthState = pDepthStateOutline;
-			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
-			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
-			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
-			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
-			pipelineSettings.pRootSignature = RenderPasses[RenderPass::ToonShade]->pRootSignature;
-			pipelineSettings.pShaderProgram = pOutlineShader;
-			pipelineSettings.pVertexLayout = &vertexLayout;
-			pipelineSettings.pRasterizerState = pRasterDefault;
-
-			addPipeline(pRenderer, &desc, &pOutlinePipeline);
+			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Forward]->pPipeline);
 		}
 	}
 
-	const char* GetName() { return "08_ToonShading"; }
+	const char* GetName() { return "09_Tessellation"; }
 
 	void RecenterCameraView(float maxDistance, vec3 lookAt = vec3(0))
 	{
@@ -805,7 +695,7 @@ public:
 			DescriptorData params[1] = {};
 			params[0].pName = "UniformData";
 			params[0].ppBuffers = &pUniformBuffers[i];
-			updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::ToonShade]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
+			updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
 		}
 	}
 
@@ -814,7 +704,7 @@ public:
 		AssimpImporter importer;
 
 		AssimpImporter::Model model;
-		if (!importer.ImportModel("../../../../art/Meshes/chinesedragon.dae", &model))
+		if (!importer.ImportModel("../../../../art/Meshes/deer.dae", &model))
 		{
 			return false;
 		}
@@ -871,4 +761,4 @@ public:
 	}
 };
 
-DEFINE_APPLICATION_MAIN(ToonShading)
+DEFINE_APPLICATION_MAIN(Tessellation)
