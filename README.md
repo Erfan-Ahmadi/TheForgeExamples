@@ -38,7 +38,7 @@
   <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/instancing.gif" alt="" width="300" height="200" />
 </p>
 
-#### 2. Blinn-Phon Lightmapping
+#### 2. Blinn-Phong Lightmapping
 <p align="center">
   <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/lightmapping.gif" alt="" width="300" height="200" />
 </p>
