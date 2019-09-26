@@ -1,8 +1,7 @@
 struct VSOutput 
 {
 	float4 Position : SV_POSITION;
-	float4 Normal	: NORMAL;
-	float3 Color	: COLOR;
+	float3 Normal	: NORMAL;
 };
 
 SamplerState	uSampler0		: register(s0);

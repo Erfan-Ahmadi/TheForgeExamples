@@ -9,13 +9,13 @@ cbuffer UniformData : register(b0, UPDATE_FREQ_PER_FRAME)
 struct VSInput
 {
     float4 Position : POSITION;
-    float4 Normal : NORMAL;
+    float3 Normal	: NORMAL;
 };
 
-struct VSOutput {
-	float4 Position : SV_POSITION;
-	float4 Normal	: NORMAL;
-	float3 Color	: COLOR;
+struct VS_CONTROL_POINT_OUTPUT 
+{
+	float4 Position : POSITION;
+	float3 Normal	: NORMAL;
 };
 
  float4x4 inverse(float4x4 input)
@@ -48,15 +48,14 @@ struct VSOutput {
      return transpose(cofactors) / determinant(input);
  }
 
-VSOutput main(VSInput input)
+VS_CONTROL_POINT_OUTPUT main(VSInput input)
 {
-	VSOutput result;
+	VS_CONTROL_POINT_OUTPUT result;
+
 	result.Normal = mul(transpose(inverse(world)), input.Normal);
 
-	float4 viewSpacePosition = mul(view, mul(world, input.Position));
-	result.Position = mul(proj, viewSpacePosition);
-
-	result.Color = float3(1.0f, 1.0f, 1.0f);
+	// World-Space
+	result.Position = mul(proj, mul(view, mul(world, input.Position)));
 
 	return result;
 }

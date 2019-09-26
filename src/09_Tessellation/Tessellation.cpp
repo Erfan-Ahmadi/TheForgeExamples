@@ -40,6 +40,7 @@ TextDrawDesc gFrameTimeDraw = TextDrawDesc(0, 0xff00ffff, 18);
 RenderTarget* pDepthBuffer;
 
 RasterizerState* pRasterDefault = NULL;
+RasterizerState* pRasterWireframe = NULL;
 DepthState* pDepthDefault = NULL;
 DepthState* pDepthNone = NULL;
 
@@ -49,7 +50,7 @@ public:
 	Shader* pShader;
 	RootSignature* pRootSignature;
 	DescriptorSet* pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_COUNT];
-	Pipeline* pPipeline;
+	Pipeline* pPipeline[2];
 	CmdPool* pCmdPool;
 	Cmd** ppCmds;
 	Buffer* pPerPassCB[gImageCount];
@@ -67,7 +68,7 @@ struct RenderPass
 {
 	enum Enum
 	{
-		Forward
+		Passthrough
 	};
 };
 
@@ -92,7 +93,7 @@ struct
 	mat4	world;
 	mat4	view;
 	mat4	proj;
-	float3	lightPos = { 0.0f, 1.0f, 2.0f };
+	//float3	lightPos = { 0.0f, 1.0f, 2.0f };
 	float tessellationLevel = 0.1f;
 } gUniformData;
 
@@ -113,6 +114,8 @@ const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Middleware_3/Text/",									// FSR_MIDDLEWARE_TEXT
 	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
+
+bool gWireframe = true;
 
 class Tessellation : public IApp
 {
@@ -138,7 +141,7 @@ public:
 		// Forward Pass
 		RenderPassData* pass =
 			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), pRenderer, pGraphicsQueue, gImageCount);
-		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Forward, pass));
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Passthrough, pass));
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
@@ -153,15 +156,18 @@ public:
 		// Shader
 		ShaderLoadDesc shaderDesc = {};
 		shaderDesc.mStages[0] = { "basic.vert", NULL, 0, FSR_SrcShaders };
-		shaderDesc.mStages[1] = { "basic.frag", NULL, 0, FSR_SrcShaders };
-		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Forward]->pShader);
+		shaderDesc.mStages[1] = { "passthrough.tesc", NULL, 0, FSR_SrcShaders };
+		shaderDesc.mStages[2] = { "passthrough.tese", NULL, 0, FSR_SrcShaders };
+		shaderDesc.mStages[3] = { "basic.frag", NULL, 0, FSR_SrcShaders };
+		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Passthrough]->pShader);
 
 		//Create rasteriser state objects
 		{
 			RasterizerStateDesc rasterizerStateDesc = {};
 			rasterizerStateDesc.mCullMode = CULL_MODE_NONE;
-			rasterizerStateDesc.mFillMode = FILL_MODE_WIREFRAME;
 			addRasterizerState(pRenderer, &rasterizerStateDesc, &pRasterDefault);
+			rasterizerStateDesc.mFillMode = FILL_MODE_WIREFRAME;
+			addRasterizerState(pRenderer, &rasterizerStateDesc, &pRasterWireframe);
 		}
 
 		//Create depth state objects
@@ -193,21 +199,21 @@ public:
 		{
 			// Root Signature for Forward Pipeline
 			{
-				Shader* shaders[2] = { RenderPasses[RenderPass::Forward]->pShader };
+				Shader* shaders[2] = { RenderPasses[RenderPass::Passthrough]->pShader };
 				RootSignatureDesc rootDesc = {};
 				rootDesc.mShaderCount = 1;
 				rootDesc.ppShaders = shaders;
 				rootDesc.mStaticSamplerCount = 1;
 				rootDesc.ppStaticSamplerNames = &samplerNames;
 				rootDesc.ppStaticSamplers = &pSampler;
-				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Forward]->pRootSignature);
+				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Passthrough]->pRootSignature);
 			}
 		}
 
-		DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Forward]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
-		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Forward]->pDescriptorSets[0]);
-		setDesc = { RenderPasses[RenderPass::Forward]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
-		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Forward]->pDescriptorSets[1]);
+		DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Passthrough]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
+		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Passthrough]->pDescriptorSets[0]);
+		setDesc = { RenderPasses[RenderPass::Passthrough]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
+		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Passthrough]->pDescriptorSets[1]);
 
 		// Create Uniform Buffers
 		{
@@ -251,6 +257,7 @@ public:
 		pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
 
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &gMicroProfiler));
+		pGui->AddWidget(CheckboxWidget("Wireframe", &gWireframe));
 		pGui->AddWidget(SliderFloatWidget("Tessellation Level", &gUniformData.tessellationLevel, 0.0f, 50.0f, 0.5f, "%.3f"));
 
 		// Camera
@@ -376,6 +383,7 @@ public:
 		}
 
 		removeRasterizerState(pRasterDefault);
+		removeRasterizerState(pRasterWireframe);
 		removeDepthState(pDepthDefault);
 		removeDepthState(pDepthNone);
 
@@ -441,8 +449,14 @@ public:
 
 			if (pass->pPipeline)
 			{
-				removePipeline(pRenderer, pass->pPipeline);
-				pass->pPipeline = NULL;
+				for (int i = 0; i < 2; ++i)
+				{
+					if (pass->pPipeline[i])
+					{
+						removePipeline(pRenderer, pass->pPipeline[i]);
+						pass->pPipeline[i] = NULL;
+					}
+				}
 			}
 		}
 
@@ -496,7 +510,7 @@ public:
 
 		Semaphore* pRenderCompleteSemaphore = pRenderCompleteSemaphores[gFrameIndex];
 		Fence* pRenderCompleteFence = pRenderCompleteFences[gFrameIndex];
-		
+
 		// Stall if CPU is running "Swap Chain Buffer Count" frames ahead of GPU
 		FenceStatus fenceStatus;
 		getFenceStatus(pRenderer, pRenderCompleteFence, &fenceStatus);
@@ -520,7 +534,7 @@ public:
 		loadActions.mClearDepth.stencil = 0.0;
 
 		// Forward Pass
-		Cmd* cmd = RenderPasses[RenderPass::Forward]->ppCmds[gFrameIndex];
+		Cmd* cmd = RenderPasses[RenderPass::Passthrough]->ppCmds[gFrameIndex];
 		{
 			RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
 
@@ -540,18 +554,21 @@ public:
 				cmdSetViewport(cmd, 0.0f, 0.0f, (float)pSwapChainRenderTarget->mDesc.mWidth, (float)pSwapChainRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
 				cmdSetScissor(cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth, pSwapChainRenderTarget->mDesc.mHeight);
 
-				cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
-		
-				cmdBindPipeline(cmd, RenderPasses[RenderPass::Forward]->pPipeline);
+				cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Passthrough]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+
+				if (gWireframe)
+					cmdBindPipeline(cmd, RenderPasses[RenderPass::Passthrough]->pPipeline[1]);
+				else
+					cmdBindPipeline(cmd, RenderPasses[RenderPass::Passthrough]->pPipeline[0]);
+
+				for (int i = 0; i < sceneData.meshes.size(); ++i)
 				{
-					for (int i = 0; i < sceneData.meshes.size(); ++i)
-					{
-						Buffer* pVertexBuffers[] = { sceneData.meshes[i]->pPositionStream, sceneData.meshes[i]->pNormalStream };
-						cmdBindVertexBuffer(cmd, 2, pVertexBuffers, NULL);
-						cmdBindIndexBuffer(cmd, sceneData.meshes[i]->pIndicesStream, 0);
-						cmdDrawIndexed(cmd, sceneData.meshes[i]->mCountIndices, 0, 0);
-					}
+					Buffer* pVertexBuffers[] = { sceneData.meshes[i]->pPositionStream, sceneData.meshes[i]->pNormalStream };
+					cmdBindVertexBuffer(cmd, 2, pVertexBuffers, NULL);
+					cmdBindIndexBuffer(cmd, sceneData.meshes[i]->pIndicesStream, 0);
+					cmdDrawIndexed(cmd, sceneData.meshes[i]->mCountIndices, 0, 0);
 				}
+
 
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
@@ -654,19 +671,20 @@ public:
 			PipelineDesc desc = {};
 			desc.mType = PIPELINE_TYPE_GRAPHICS;
 			GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
-			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
+			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_PATCH_LIST;
 			pipelineSettings.mRenderTargetCount = 1;
 			pipelineSettings.pDepthState = pDepthDefault;
 			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
 			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
 			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
 			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
-			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Forward]->pRootSignature;
-			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::Forward]->pShader;
+			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Passthrough]->pRootSignature;
+			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::Passthrough]->pShader;
 			pipelineSettings.pVertexLayout = &vertexLayout;
 			pipelineSettings.pRasterizerState = pRasterDefault;
-
-			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Forward]->pPipeline);
+			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Passthrough]->pPipeline[0]);
+			pipelineSettings.pRasterizerState = pRasterWireframe;
+			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Passthrough]->pPipeline[1]);
 		}
 	}
 
@@ -695,7 +713,7 @@ public:
 			DescriptorData params[1] = {};
 			params[0].pName = "UniformData";
 			params[0].ppBuffers = &pUniformBuffers[i];
-			updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
+			updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Passthrough]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
 		}
 	}
 
