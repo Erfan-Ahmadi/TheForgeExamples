@@ -1,11 +1,3 @@
-cbuffer UniformData : register(b0, UPDATE_FREQ_PER_FRAME)
-{
-	float4x4	world;
-	float4x4	view;
-	float4x4	proj;
-	float		tessellationLevel;
-};
-
 struct VSInput
 {
     float4 Position : POSITION;
@@ -52,10 +44,10 @@ VS_CONTROL_POINT_OUTPUT main(VSInput input)
 {
 	VS_CONTROL_POINT_OUTPUT result;
 
-	result.Normal = mul(transpose(inverse(world)), input.Normal);
+	result.Normal = input.Normal;
 
 	// World-Space
-	result.Position = mul(proj, mul(view, mul(world, input.Position)));
+	result.Position = input.Position;
 
 	return result;
 }

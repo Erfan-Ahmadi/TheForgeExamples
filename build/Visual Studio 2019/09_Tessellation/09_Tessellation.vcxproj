@@ -34,6 +34,8 @@
     <None Include="..\..\..\src\09_Tessellation\Shaders\D3D12\basic.vert" />
     <None Include="..\..\..\src\09_Tessellation\Shaders\D3D12\passthrough.tesc" />
     <None Include="..\..\..\src\09_Tessellation\Shaders\D3D12\passthrough.tese" />
+    <None Include="..\..\..\src\09_Tessellation\Shaders\D3D12\pntriangles.tesc" />
+    <None Include="..\..\..\src\09_Tessellation\Shaders\D3D12\pntriangles.tese" />
     <None Include="..\..\..\src\09_Tessellation\Shaders\D3D12\profile.frag" />
     <None Include="..\..\..\src\09_Tessellation\Shaders\D3D12\profile.vert" />
     <None Include="..\..\..\src\09_Tessellation\Shaders\Vulkan\basic.frag" />

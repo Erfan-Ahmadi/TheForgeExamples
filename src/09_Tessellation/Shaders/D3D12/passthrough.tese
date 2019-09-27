@@ -33,9 +33,11 @@ DS_OUTPUT main(HS_CONSTANT_DATA_OUTPUT input, float3 location : SV_DomainLocatio
 {
     DS_OUTPUT Output;
 
-	Output.Position =	(	location.x * patch[0].Position +
+	float3 finalPos =	(	location.x * patch[0].Position +
 							location.y * patch[1].Position +
 							location.z * patch[2].Position);
+
+	Output.Position = mul(proj, mul(view, mul(world, float4(finalPos, 1.0f))));
 	
 	Output.Normal =		(	location.x * patch[0].Normal +
 							location.y * patch[1].Normal +

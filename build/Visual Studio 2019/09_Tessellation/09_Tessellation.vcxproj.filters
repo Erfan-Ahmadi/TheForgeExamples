@@ -50,5 +50,11 @@
     <None Include="..\..\..\src\09_Tessellation\Shaders\D3D12\passthrough.tese">
       <Filter>Shaders\D3D12</Filter>
     </None>
+    <None Include="..\..\..\src\09_Tessellation\Shaders\D3D12\pntriangles.tese">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
+    <None Include="..\..\..\src\09_Tessellation\Shaders\D3D12\pntriangles.tesc">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
   </ItemGroup>
 </Project>

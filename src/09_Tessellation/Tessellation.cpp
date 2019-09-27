@@ -44,6 +44,12 @@ RasterizerState* pRasterWireframe = NULL;
 DepthState* pDepthDefault = NULL;
 DepthState* pDepthNone = NULL;
 
+struct
+{
+	Shader* pShader;
+	Pipeline* pPipeline[2];
+} pntrianglesPass;
+
 class RenderPassData
 {
 public:
@@ -68,7 +74,7 @@ struct RenderPass
 {
 	enum Enum
 	{
-		Passthrough
+		Tessellation
 	};
 };
 
@@ -95,6 +101,7 @@ struct
 	mat4	proj;
 	//float3	lightPos = { 0.0f, 1.0f, 2.0f };
 	float tessellationLevel = 1.0f;
+	float tessellationAlpha = 1.0f;
 } gUniformData;
 
 Buffer* pUniformBuffers[gImageCount] = { NULL };
@@ -115,7 +122,8 @@ const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
 
-bool gWireframe = true;
+bool		gWireframe = true;
+uint32_t	technique = 0;
 
 class Tessellation : public IApp
 {
@@ -138,10 +146,9 @@ public:
 		queueDesc.mFlag = QUEUE_FLAG_NONE;
 		addQueue(pRenderer, &queueDesc, &pGraphicsQueue);
 
-		// Forward Pass
 		RenderPassData* pass =
 			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), pRenderer, pGraphicsQueue, gImageCount);
-		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Passthrough, pass));
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Tessellation, pass));
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
@@ -159,7 +166,10 @@ public:
 		shaderDesc.mStages[1] = { "passthrough.tesc", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[2] = { "passthrough.tese", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[3] = { "basic.frag", NULL, 0, FSR_SrcShaders };
-		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Passthrough]->pShader);
+		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Tessellation]->pShader);
+		shaderDesc.mStages[1] = { "pntriangles.tesc", NULL, 0, FSR_SrcShaders };
+		shaderDesc.mStages[2] = { "pntriangles.tese", NULL, 0, FSR_SrcShaders };
+		addShader(pRenderer, &shaderDesc, &pntrianglesPass.pShader);
 
 		//Create rasteriser state objects
 		{
@@ -199,21 +209,21 @@ public:
 		{
 			// Root Signature for Forward Pipeline
 			{
-				Shader* shaders[2] = { RenderPasses[RenderPass::Passthrough]->pShader };
+				Shader* shaders[2] = { RenderPasses[RenderPass::Tessellation]->pShader, pntrianglesPass.pShader };
 				RootSignatureDesc rootDesc = {};
 				rootDesc.mShaderCount = 1;
 				rootDesc.ppShaders = shaders;
 				rootDesc.mStaticSamplerCount = 1;
 				rootDesc.ppStaticSamplerNames = &samplerNames;
 				rootDesc.ppStaticSamplers = &pSampler;
-				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Passthrough]->pRootSignature);
+				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Tessellation]->pRootSignature);
 			}
 		}
 
-		DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Passthrough]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
-		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Passthrough]->pDescriptorSets[0]);
-		setDesc = { RenderPasses[RenderPass::Passthrough]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
-		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Passthrough]->pDescriptorSets[1]);
+		DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Tessellation]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
+		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Tessellation]->pDescriptorSets[0]);
+		setDesc = { RenderPasses[RenderPass::Tessellation]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
+		addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Tessellation]->pDescriptorSets[1]);
 
 		// Create Uniform Buffers
 		{
@@ -256,9 +266,21 @@ public:
 
 		pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
 
+		const char* names[2] =
+		{
+			"Passthrough",
+			"PN-Triangles"
+		};
+		static const uint32_t values[] = {
+			0,
+			1,
+		};
+
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &gMicroProfiler));
 		pGui->AddWidget(CheckboxWidget("Wireframe", &gWireframe));
+		pGui->AddWidget(DropdownWidget("Technique", &technique, names, values, 2));
 		pGui->AddWidget(SliderFloatWidget("Tessellation Level", &gUniformData.tessellationLevel, 0.0f, 10.0f, 0.25f, "%.3f"));
+		pGui->AddWidget(SliderFloatWidget("Tessellation Alpha", &gUniformData.tessellationAlpha, 0.0f, 1.0f, 0.1f, "%.3f"));
 
 		// Camera
 		CameraMotionParameters cmp{ 40.0f, 30.0f, 100.0f };
@@ -365,11 +387,14 @@ public:
 
 			removeShader(pRenderer, pass->pShader);
 
-			removeRootSignature(pRenderer, pass->pRootSignature);
+			if (pass->pRootSignature)
+				removeRootSignature(pRenderer, pass->pRootSignature);
 
 			pass->~RenderPassData();
 			conf_free(pass);
 		}
+
+		removeShader(pRenderer, pntrianglesPass.pShader);
 
 		RenderPasses.empty();
 
@@ -460,6 +485,15 @@ public:
 			}
 		}
 
+		for (int i = 0; i < 2; ++i)
+		{
+			if (pntrianglesPass.pPipeline[i])
+			{
+				removePipeline(pRenderer, pntrianglesPass.pPipeline[i]);
+				pntrianglesPass.pPipeline[i] = NULL;
+			}
+		}
+
 		removeRenderTarget(pRenderer, pDepthBuffer);
 		removeSwapChain(pRenderer, pSwapChain);
 		pDepthBuffer = NULL;
@@ -533,8 +567,7 @@ public:
 		loadActions.mLoadActionStencil = LOAD_ACTION_CLEAR;
 		loadActions.mClearDepth.stencil = 0.0;
 
-		// Forward Pass
-		Cmd* cmd = RenderPasses[RenderPass::Passthrough]->ppCmds[gFrameIndex];
+		Cmd* cmd = RenderPasses[RenderPass::Tessellation]->ppCmds[gFrameIndex];
 		{
 			RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
 
@@ -554,12 +587,23 @@ public:
 				cmdSetViewport(cmd, 0.0f, 0.0f, (float)pSwapChainRenderTarget->mDesc.mWidth, (float)pSwapChainRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
 				cmdSetScissor(cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth, pSwapChainRenderTarget->mDesc.mHeight);
 
-				cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Passthrough]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+				cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Tessellation]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
 
-				if (gWireframe)
-					cmdBindPipeline(cmd, RenderPasses[RenderPass::Passthrough]->pPipeline[1]);
+				if (technique == 0)
+				{
+					if (gWireframe)
+						cmdBindPipeline(cmd, RenderPasses[RenderPass::Tessellation]->pPipeline[1]);
+					else
+						cmdBindPipeline(cmd, RenderPasses[RenderPass::Tessellation]->pPipeline[0]);
+				}
 				else
-					cmdBindPipeline(cmd, RenderPasses[RenderPass::Passthrough]->pPipeline[0]);
+				{
+					if (gWireframe)
+						cmdBindPipeline(cmd, pntrianglesPass.pPipeline[1]);
+					else
+						cmdBindPipeline(cmd, pntrianglesPass.pPipeline[0]);
+				}
+
 
 				for (int i = 0; i < sceneData.meshes.size(); ++i)
 				{
@@ -678,13 +722,20 @@ public:
 			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
 			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
 			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
-			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Passthrough]->pRootSignature;
-			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::Passthrough]->pShader;
+			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Tessellation]->pRootSignature;
 			pipelineSettings.pVertexLayout = &vertexLayout;
+
+			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::Tessellation]->pShader;
 			pipelineSettings.pRasterizerState = pRasterDefault;
-			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Passthrough]->pPipeline[0]);
+			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Tessellation]->pPipeline[0]);
+			pipelineSettings.pShaderProgram = pntrianglesPass.pShader;
+			addPipeline(pRenderer, &desc, &pntrianglesPass.pPipeline[0]);
+
+			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::Tessellation]->pShader;
 			pipelineSettings.pRasterizerState = pRasterWireframe;
-			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Passthrough]->pPipeline[1]);
+			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Tessellation]->pPipeline[1]);
+			pipelineSettings.pShaderProgram = pntrianglesPass.pShader;
+			addPipeline(pRenderer, &desc, &pntrianglesPass.pPipeline[1]);
 		}
 	}
 
@@ -713,7 +764,7 @@ public:
 			DescriptorData params[1] = {};
 			params[0].pName = "UniformData";
 			params[0].ppBuffers = &pUniformBuffers[i];
-			updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Passthrough]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
+			updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Tessellation]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
 		}
 	}
 
