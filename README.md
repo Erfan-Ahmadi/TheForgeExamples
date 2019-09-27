@@ -14,9 +14,9 @@
   - [x] Profiling and UI
   - [x] [Deferred Lighting](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/07_DefferedLighting)
   - [x] [Stencil Buffer Toon Shading](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/08_ToonShading)
-  - [ ] [Tessellation](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/09_Tessellation)
+  - [x] [Tessellation](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/09_Tessellation)
     - [x] Passthrough
-    - [ ] PN-Triangles
+    - [x] PN-Triangles
   - [ ] Environmental Mapping
     - [ ] Cube Map Reflections
     - [ ] Spherical Map Reflections
@@ -53,9 +53,10 @@
   <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/toonshade.gif" alt="" width="300" height="200" />
 </p>
 
-#### 5. Tessellation (Passthrough - PN Triangles)
+#### 5. Tessellation (Left: Passthrough ------- Right: PN Triangles)
 <p align="center">
   <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/tessellation_passthrough.gif" alt="" width="300" height="200" />
+  <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/tessellation_pntriangles.gif" alt="" width="300" height="200" />
 </p>
 
 ### Build
