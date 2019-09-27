@@ -56,7 +56,7 @@
 #### 5. Tessellation (Left: Passthrough ------- Right: PN Triangles)
 <p align="center">
   <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/tessellation_passthrough.gif" alt="" width="300" height="200" />
-  <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/tessellation_pntriangles.gif" alt="" width="300" height="200" />
+  <img src="https://github.com/Erfan-Ahmadi/TheForgeExamples/raw/master/screenshots/tessellation_pntriangles_suzanne.gif" alt="" width="300" height="200" />
 </p>
 
 ### Build
