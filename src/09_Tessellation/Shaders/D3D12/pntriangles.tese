@@ -43,6 +43,8 @@ struct DS_OUTPUT
     float3 Normal : NORMAL;
 };
 
+float4x4 inverse(float4x4 input);
+
 [domain("tri")]
 [partitioning("fractional_odd")]
 [outputtopology("triangle_ccw")]
@@ -73,7 +75,8 @@ DS_OUTPUT main(HS_CONSTANT_DATA_OUTPUT input, float3 location : SV_DomainLocatio
     float3 barNormal = location[2]*patch[0].Normal + location[0]*patch[1].Normal + location[1]*patch[2].Normal;
     float3 pnNormal  = patch[0].Normal*uvwSquared[2] + patch[1].Normal*uvwSquared[0] + patch[2].Normal*uvwSquared[1]
                    + n110*uvw[2]*uvw[0] + n011*uvw[0]*uvw[1]+ n101*uvw[2]*uvw[1];
-    Output.Normal = tessAlpha*pnNormal + (1.0-tessAlpha) * barNormal;
+    float3 normal = tessAlpha*pnNormal + (1.0-tessAlpha) * barNormal;
+	Output.Normal = mul(transpose(inverse(world)), normal);
 
     // compute interpolated pos
     float3 barPos = location[2]*patch[0].Position.xyz
@@ -100,4 +103,34 @@ DS_OUTPUT main(HS_CONSTANT_DATA_OUTPUT input, float3 location : SV_DomainLocatio
 	Output.Position = mul(proj, mul(view, mul(world, float4(finalPos, 1.0))));
 
     return Output;
+}
+
+float4x4 inverse(float4x4 input)
+{
+    #define minor(a,b,c) determinant(float3x3(input.a, input.b, input.c))
+    //determinant(float3x3(input._22_23_23, input._32_33_34, input._42_43_44))
+    
+    float4x4 cofactors = float4x4(
+         minor(_22_23_24, _32_33_34, _42_43_44), 
+        -minor(_21_23_24, _31_33_34, _41_43_44),
+         minor(_21_22_24, _31_32_34, _41_42_44),
+        -minor(_21_22_23, _31_32_33, _41_42_43),
+        
+        -minor(_12_13_14, _32_33_34, _42_43_44),
+         minor(_11_13_14, _31_33_34, _41_43_44),
+        -minor(_11_12_14, _31_32_34, _41_42_44),
+         minor(_11_12_13, _31_32_33, _41_42_43),
+        
+         minor(_12_13_14, _22_23_24, _42_43_44),
+        -minor(_11_13_14, _21_23_24, _41_43_44),
+         minor(_11_12_14, _21_22_24, _41_42_44),
+        -minor(_11_12_13, _21_22_23, _41_42_43),
+        
+        -minor(_12_13_14, _22_23_24, _32_33_34),
+         minor(_11_13_14, _21_23_24, _31_33_34),
+        -minor(_11_12_14, _21_22_24, _31_32_34),
+         minor(_11_12_13, _21_22_23, _31_32_33)
+    );
+    #undef minor
+    return transpose(cofactors) / determinant(input);
 }

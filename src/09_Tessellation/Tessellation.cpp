@@ -520,8 +520,8 @@ public:
 
 		// Update Instance Data
 		gUniformData.world = mat4::translation(Vector3(0.0f, -1.5f, 4)) *
-			mat4::rotationY(PI / 4.0f) *
-			mat4::rotationX(PI / 2.0f) *
+			//mat4::rotationY(PI / 4.0f) *
+			//mat4::rotationX(PI / 2.0f) *
 			mat4::scale(Vector3(0.4f));
 
 		viewMat.setTranslation(vec3(0));
@@ -773,7 +773,7 @@ public:
 		AssimpImporter importer;
 
 		AssimpImporter::Model model;
-		if (!importer.ImportModel("../../../../art/Meshes/deer.dae", &model))
+		if (!importer.ImportModel("../../../../art/Meshes/suzanne.obj", &model))
 		{
 			return false;
 		}
