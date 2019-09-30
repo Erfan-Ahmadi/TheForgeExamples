@@ -773,7 +773,7 @@ public:
 		AssimpImporter importer;
 
 		AssimpImporter::Model model;
-		if (!importer.ImportModel("../../../../art/Meshes/suzanne.obj", &model))
+		if (!importer.ImportModel("../../../../art/Meshes/lowpoly/teapot.obj", &model))
 		{
 			return false;
 		}

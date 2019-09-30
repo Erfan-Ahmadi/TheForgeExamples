@@ -302,7 +302,7 @@ public:
 		pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
 
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &gMicroProfiler));
-		pGui->AddWidget(SliderFloatWidget("Outline Thickness", &gUniformData.outlineThickness, 0.0f, 1.0f, 0.05f, "%.3f"));
+		pGui->AddWidget(SliderFloatWidget("Outline Thickness", &gUniformData.outlineThickness, 0.0f, 2.0f, 0.05f, "%.3f"));
 
 		// Camera
 		CameraMotionParameters cmp{ 40.0f, 30.0f, 100.0f };

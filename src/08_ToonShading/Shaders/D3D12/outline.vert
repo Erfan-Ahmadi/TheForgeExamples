@@ -3,7 +3,6 @@ cbuffer UniformData : register(b0, UPDATE_FREQ_PER_FRAME)
 	float4x4	world;
 	float4x4	view;
 	float4x4	proj;
-	float4	lightPos;
 	float outlineThickness;
 };
 
