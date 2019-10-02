@@ -1,10 +1,10 @@
 #define MAX_INSTANCES 8
 
-cbuffer UniformData : register(b0)
+cbuffer UniformData : register(b0, UPDATE_FREQ_PER_FRAME)
 {
 	float4x4 view;
 	float4x4 proj;
-	float4x4 world[MAX_INSTANCES];
+	float4x4 world;
 };
 
 struct VSInput
@@ -51,11 +51,11 @@ struct VSOutput {
      return transpose(cofactors) / determinant(input);
  }
 
-VSOutput main(VSInput input, uint InstanceID : SV_InstanceID)
+VSOutput main(VSInput input)
 {
 	VSOutput result;
-	result.Normal = mul(transpose(inverse(world[InstanceID])), input.Normal);  
-	result.FragPos = mul(world[InstanceID], input.Position);
+	result.Normal = mul(transpose(inverse(world)), input.Normal);  
+	result.FragPos = mul(world, input.Position);
 	result.Position = mul(proj, mul(view, result.FragPos));
 	result.TexCoord = input.TexCoord;
 	return result;
