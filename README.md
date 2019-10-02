@@ -17,6 +17,9 @@
   - [x] [Tessellation](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/09_Tessellation)
     - [x] Passthrough
     - [x] PN-Triangles
+  - [ ] Bloom
+  - [ ] Gamma Correction
+  - [ ] Tone Mapping / HDR
   - [ ] Environmental Mapping
     - [ ] Cube Map Reflections
     - [ ] Spherical Map Reflections
@@ -26,10 +29,7 @@
   - [ ] [Ambient Occlusion](https://github.com/Erfan-Ahmadi/AmbientOcclusion)
   - [ ] LOD
   - [ ] Occlusion Query
-  - [ ] Bloom
   - [ ] Motion Blur
-  - [ ] Gamma Correction
-  - [ ] Tone Mapping / HDR
   
 ### ScreenShots
 
