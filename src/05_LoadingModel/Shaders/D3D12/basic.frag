@@ -60,7 +60,6 @@ float3 calculateSpotLight(SpotLight spotLight, float3 normal, float3 viewDir, fl
 
 float4 main(VSOutput input) : SV_TARGET
 {
-	return float4(1,1,1,1);
 	float3 normal = normalize(input.Normal.xyz);
 	float3 viewDir = normalize(viewPos - input.FragPos.xyz);
 	

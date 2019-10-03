@@ -623,17 +623,17 @@ public:
 		updateResource(&viewProjCbv);
 
 		// Update light uniform buffers
-		//BufferUpdateDesc lightBuffUpdate = { pLightBuffer, &lightData };
-		//updateResource(&lightBuffUpdate);
+		BufferUpdateDesc lightBuffUpdate = { pLightBuffer, &lightData };
+		updateResource(&lightBuffUpdate);
 
-		//BufferUpdateDesc pointLightBuffUpdate = { lightBuffers.pPointLightsBuffer, &pointLights };
-		//updateResource(&pointLightBuffUpdate);
+		BufferUpdateDesc pointLightBuffUpdate = { lightBuffers.pPointLightsBuffer, &pointLights };
+		updateResource(&pointLightBuffUpdate);
 
-		//BufferUpdateDesc dirLightBuffUpdate = { lightBuffers.pDirLightsBuffer, &directionalLights };
-		//updateResource(&dirLightBuffUpdate);
+		BufferUpdateDesc dirLightBuffUpdate = { lightBuffers.pDirLightsBuffer, &directionalLights };
+		updateResource(&dirLightBuffUpdate);
 
-		//BufferUpdateDesc spotLightBuffUpdate = { lightBuffers.pSpotLightsBuffer, &spotLights };
-		//updateResource(&spotLightBuffUpdate);
+		BufferUpdateDesc spotLightBuffUpdate = { lightBuffers.pSpotLightsBuffer, &spotLights };
+		updateResource(&spotLightBuffUpdate);
 
 		// Load Actions
 		LoadActionsDesc loadActions = {};
@@ -840,7 +840,7 @@ public:
 				params[0].ppTextures = &textures.pTextureColor;
 				params[1].pName = "TextureSpecular";
 				params[1].ppTextures = &textures.pTextureSpecular;
-				//updateDescriptorSet(pRenderer, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE], 2, params);
+				updateDescriptorSet(pRenderer, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE], 2, params);
 			}
 
 			// DESCRIPTOR_UPDATE_FREQ_PER_FRAME
@@ -848,18 +848,18 @@ public:
 
 				for (uint32_t i = 0; i < gImageCount; ++i)
 				{
-					DescriptorData params[1] = {};
+					DescriptorData params[5] = {};
 					params[0].pName = "UniformData";
 					params[0].ppBuffers = &pUniformBuffers[i];
-					//params[1].pName = "LightData";
-					//params[1].ppBuffers = &pLightBuffer;
-					//params[2].pName = "DirectionalLights";
-					//params[2].ppBuffers = &lightBuffers.pDirLightsBuffer;
-					//params[3].pName = "PointLights";
-					//params[3].ppBuffers = &lightBuffers.pPointLightsBuffer;
-					//params[4].pName = "SpotLights";
-					//params[4].ppBuffers = &lightBuffers.pSpotLightsBuffer;
-					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
+					params[1].pName = "LightData";
+					params[1].ppBuffers = &pLightBuffer;
+					params[2].pName = "DirectionalLights";
+					params[2].ppBuffers = &lightBuffers.pDirLightsBuffer;
+					params[3].pName = "PointLights";
+					params[3].ppBuffers = &lightBuffers.pPointLightsBuffer;
+					params[4].pName = "SpotLights";
+					params[4].ppBuffers = &lightBuffers.pSpotLightsBuffer;
+					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 5, params);
 				}
 			}
 		}
