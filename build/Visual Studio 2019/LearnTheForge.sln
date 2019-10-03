@@ -15,11 +15,13 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "05_LoadingModel", "05_Loadi
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "06_GoochShading", "06_GoochShading\06_GoochShading.vcxproj", "{EA809FAF-FA7C-44EE-9C2B-466DB02C7321}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "07_DefferedLighting", "07_DefferedLighting\07_DefferedLighting.vcxproj", "{68F3F1AC-1C97-4C22-A01A-334EE7439C72}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "07_DeferredLighting", "07_DefferedLighting\07_DefferedLighting.vcxproj", "{68F3F1AC-1C97-4C22-A01A-334EE7439C72}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "08_ToonShading", "08_ToonShading\08_ToonShading.vcxproj", "{056B15B6-8565-4E97-AE08-7C31E31EF162}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "09_Tessellation", "09_Tessellation\09_Tessellation.vcxproj", "{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "10_BloomHDR", "10_BloomHDR\10_BloomHDR.vcxproj", "{E7566989-8929-446E-9B1E-7BD49D1DF538}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -139,6 +141,18 @@ Global
 		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.ReleaseDx11|x64.Build.0 = ReleaseDx11|x64
 		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.ReleaseVk|x64.ActiveCfg = ReleaseVk|x64
 		{3D7D4FB8-E4AF-47C2-BD32-721BBC41489A}.ReleaseVk|x64.Build.0 = ReleaseVk|x64
+		{E7566989-8929-446E-9B1E-7BD49D1DF538}.DebugDx|x64.ActiveCfg = DebugDx|x64
+		{E7566989-8929-446E-9B1E-7BD49D1DF538}.DebugDx|x64.Build.0 = DebugDx|x64
+		{E7566989-8929-446E-9B1E-7BD49D1DF538}.DebugDx11|x64.ActiveCfg = DebugDx11|x64
+		{E7566989-8929-446E-9B1E-7BD49D1DF538}.DebugDx11|x64.Build.0 = DebugDx11|x64
+		{E7566989-8929-446E-9B1E-7BD49D1DF538}.DebugVk|x64.ActiveCfg = DebugVk|x64
+		{E7566989-8929-446E-9B1E-7BD49D1DF538}.DebugVk|x64.Build.0 = DebugVk|x64
+		{E7566989-8929-446E-9B1E-7BD49D1DF538}.ReleaseDx|x64.ActiveCfg = ReleaseDx|x64
+		{E7566989-8929-446E-9B1E-7BD49D1DF538}.ReleaseDx|x64.Build.0 = ReleaseDx|x64
+		{E7566989-8929-446E-9B1E-7BD49D1DF538}.ReleaseDx11|x64.ActiveCfg = ReleaseDx11|x64
+		{E7566989-8929-446E-9B1E-7BD49D1DF538}.ReleaseDx11|x64.Build.0 = ReleaseDx11|x64
+		{E7566989-8929-446E-9B1E-7BD49D1DF538}.ReleaseVk|x64.ActiveCfg = ReleaseVk|x64
+		{E7566989-8929-446E-9B1E-7BD49D1DF538}.ReleaseVk|x64.Build.0 = ReleaseVk|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

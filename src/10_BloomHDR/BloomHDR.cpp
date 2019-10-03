@@ -108,6 +108,7 @@ struct MeshBatch
 struct SceneData
 {
 	eastl::vector<MeshBatch*> meshes;
+	MeshBatch* sphere;
 } sceneData;
 
 struct DirectionalLight
@@ -198,7 +199,7 @@ RenderPassMap	RenderPasses;
 
 const char* pszBases[FSR_Count] = {
 	"../../../../src/Shaders/bin",													// FSR_BinShaders
-	"../../../../src/05_LoadingModel/",												// FSR_SrcShaders
+	"../../../../src/10_BloomHDR/",												// FSR_SrcShaders
 	"../../../../art/",																// FSR_Textures
 	"../../../../art/",																// FSR_Meshes
 	"../../../../../The-Forge/Examples_3/Unit_Tests/UnitTestResources/",			// FSR_Builtin_Fonts
@@ -569,7 +570,7 @@ public:
 
 		// Update Instance Data
 		gUniformData.pToWorld = mat4::translation(Vector3(0.0f, -1, 7)) *
-			mat4::rotationY(currentTime) *
+			//mat4::rotationY(currentTime) *
 			mat4::scale(Vector3(0.1f));
 
 		viewMat.setTranslation(vec3(0));
@@ -578,10 +579,10 @@ public:
 		directionalLights[0].ambient = float3{ 0.05f, 0.05f, 0.05f };
 		directionalLights[0].diffuse = float3{ 0.5f, 0.5f, 0.5f };
 		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };
-		lightData.numDirectionalLights = gDirectionalLights;
+		lightData.numDirectionalLights = 0;
 
-		pointLights[0].position = float3{ -4.0f, 4.0f, 5.0f };
-		pointLights[0].ambient = float3{ 0.1f, 0.1f, 0.1f };
+		pointLights[0].position = float3{ 0.0f, 4.0f + 5 * sin(currentTime), 0.0f };
+		pointLights[0].ambient = float3{ 0.5f, 0.5f, 0.5f };
 		pointLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
 		pointLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
 		pointLights[0].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
@@ -594,7 +595,7 @@ public:
 		spotLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
 		spotLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
 		spotLights[0].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
-		lightData.numSpotLights = gSpotLights;
+		lightData.numSpotLights = 0;
 
 		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
 
@@ -617,7 +618,7 @@ public:
 		Semaphore* pRenderCompleteSemaphore = pRenderCompleteSemaphores[gFrameIndex];
 		Fence* pRenderCompleteFence = pRenderCompleteFences[gFrameIndex];
 		RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
-		
+
 		// Stall if CPU is running "Swap Chain Buffer Count" frames ahead of GPU
 		FenceStatus fenceStatus;
 		getFenceStatus(pRenderer, pRenderCompleteFence, &fenceStatus);
@@ -684,12 +685,14 @@ public:
 				{
 					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
 					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
-					Buffer* pVertexBuffers[] = { sceneData.meshes[0]->pPositionStream, sceneData.meshes[0]->pNormalStream, sceneData.meshes[0]->pUVStream };
-					cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
 
-					cmdBindIndexBuffer(cmd, sceneData.meshes[0]->pIndicesStream, 0);
-
-					cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
+					for (int i = 0; i < sceneData.meshes.size(); ++i)
+					{
+						Buffer* pVertexBuffers[] = { sceneData.meshes[i]->pPositionStream, sceneData.meshes[i]->pNormalStream, sceneData.meshes[i]->pUVStream };
+						cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
+						cmdBindIndexBuffer(cmd, sceneData.meshes[i]->pIndicesStream, 0);
+						cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
+					}
 				}
 
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
@@ -816,7 +819,7 @@ public:
 		}
 	}
 
-	const char* GetName() { return "05_LoadingModel"; }
+	const char* GetName() { return "10_BloomHDR"; }
 
 	void RecenterCameraView(float maxDistance, vec3 lookAt = vec3(0))
 	{
@@ -940,55 +943,93 @@ public:
 		AssimpImporter importer;
 
 		AssimpImporter::Model model;
-		if (!importer.ImportModel("../../../../art/Meshes/lion.obj", &model))
+
 		{
-			return false;
+			if (!importer.ImportModel("../../../../art/Meshes/lion.obj", &model))
+			{
+				return false;
+			}
+
+			size_t meshSize = model.mMeshArray.size();
+
+			for (size_t i = 0; i < meshSize; ++i)
+			{
+				AssimpImporter::Mesh subMesh = model.mMeshArray[i];
+
+				MeshBatch* pMeshBatch = (MeshBatch*)conf_placement_new<MeshBatch>(conf_calloc(1, sizeof(MeshBatch)));
+
+				sceneData.meshes.push_back(pMeshBatch);
+
+				// Vertex Buffer
+				BufferLoadDesc bufferDesc = {};
+				bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
+				bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+				bufferDesc.mDesc.mVertexStride = sizeof(float3);
+				bufferDesc.mDesc.mSize = bufferDesc.mDesc.mVertexStride * subMesh.mPositions.size();
+				bufferDesc.pData = subMesh.mPositions.data();
+				bufferDesc.ppBuffer = &pMeshBatch->pPositionStream;
+				addResource(&bufferDesc);
+
+				bufferDesc.mDesc.mVertexStride = sizeof(float3);
+				bufferDesc.mDesc.mSize = subMesh.mNormals.size() * bufferDesc.mDesc.mVertexStride;
+				bufferDesc.pData = subMesh.mNormals.data();
+				bufferDesc.ppBuffer = &pMeshBatch->pNormalStream;
+				addResource(&bufferDesc);
+
+				bufferDesc.mDesc.mVertexStride = sizeof(float2);
+				bufferDesc.mDesc.mSize = subMesh.mUvs.size() * bufferDesc.mDesc.mVertexStride;
+				bufferDesc.pData = subMesh.mUvs.data();
+				bufferDesc.ppBuffer = &pMeshBatch->pUVStream;
+				addResource(&bufferDesc);
+
+				pMeshBatch->mCountIndices = subMesh.mIndices.size();
+
+				// Index buffer
+				bufferDesc = {};
+				bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_INDEX_BUFFER;
+				bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+				bufferDesc.mDesc.mIndexType = INDEX_TYPE_UINT32;
+				bufferDesc.mDesc.mSize = sizeof(uint) * (uint)subMesh.mIndices.size();
+				bufferDesc.pData = subMesh.mIndices.data();
+				bufferDesc.ppBuffer = &pMeshBatch->pIndicesStream;
+				addResource(&bufferDesc);
+			}
+
+			if (!importer.ImportModel("../../../../art/Meshes/lowpoly/geosphere.obj", &model))
+			{
+				return false;
+			}
 		}
 
 		size_t meshSize = model.mMeshArray.size();
 
-		for (size_t i = 0; i < meshSize; ++i)
-		{
-			AssimpImporter::Mesh subMesh = model.mMeshArray[i];
+		AssimpImporter::Mesh subMesh = model.mMeshArray[0];
 
-			MeshBatch* pMeshBatch = (MeshBatch*)conf_placement_new<MeshBatch>(conf_calloc(1, sizeof(MeshBatch)));
+		MeshBatch* pMeshBatch = (MeshBatch*)conf_placement_new<MeshBatch>(conf_calloc(1, sizeof(MeshBatch)));
 
-			sceneData.meshes.push_back(pMeshBatch);
+		sceneData.sphere = pMeshBatch;
 
-			// Vertex Buffer
-			BufferLoadDesc bufferDesc = {};
-			bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
-			bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
-			bufferDesc.mDesc.mVertexStride = sizeof(float3);
-			bufferDesc.mDesc.mSize = bufferDesc.mDesc.mVertexStride * subMesh.mPositions.size();
-			bufferDesc.pData = subMesh.mPositions.data();
-			bufferDesc.ppBuffer = &pMeshBatch->pPositionStream;
-			addResource(&bufferDesc);
+		// Vertex Buffer
+		BufferLoadDesc bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+		bufferDesc.mDesc.mVertexStride = sizeof(float3);
+		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mVertexStride * subMesh.mPositions.size();
+		bufferDesc.pData = subMesh.mPositions.data();
+		bufferDesc.ppBuffer = &pMeshBatch->pPositionStream;
+		addResource(&bufferDesc);
 
-			bufferDesc.mDesc.mVertexStride = sizeof(float3);
-			bufferDesc.mDesc.mSize = subMesh.mNormals.size() * bufferDesc.mDesc.mVertexStride;
-			bufferDesc.pData = subMesh.mNormals.data();
-			bufferDesc.ppBuffer = &pMeshBatch->pNormalStream;
-			addResource(&bufferDesc);
+		pMeshBatch->mCountIndices = subMesh.mIndices.size();
 
-			bufferDesc.mDesc.mVertexStride = sizeof(float2);
-			bufferDesc.mDesc.mSize = subMesh.mUvs.size() * bufferDesc.mDesc.mVertexStride;
-			bufferDesc.pData = subMesh.mUvs.data();
-			bufferDesc.ppBuffer = &pMeshBatch->pUVStream;
-			addResource(&bufferDesc);
-
-			pMeshBatch->mCountIndices = subMesh.mIndices.size();
-
-			// Index buffer
-			bufferDesc = {};
-			bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_INDEX_BUFFER;
-			bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
-			bufferDesc.mDesc.mIndexType = INDEX_TYPE_UINT32;
-			bufferDesc.mDesc.mSize = sizeof(uint) * (uint)subMesh.mIndices.size();
-			bufferDesc.pData = subMesh.mIndices.data();
-			bufferDesc.ppBuffer = &pMeshBatch->pIndicesStream;
-			addResource(&bufferDesc);
-		}
+		// Index buffer
+		bufferDesc = {};
+		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_INDEX_BUFFER;
+		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+		bufferDesc.mDesc.mIndexType = INDEX_TYPE_UINT32;
+		bufferDesc.mDesc.mSize = sizeof(uint) * (uint)subMesh.mIndices.size();
+		bufferDesc.pData = subMesh.mIndices.data();
+		bufferDesc.ppBuffer = &pMeshBatch->pIndicesStream;
+		addResource(&bufferDesc);
 
 		return true;
 	}

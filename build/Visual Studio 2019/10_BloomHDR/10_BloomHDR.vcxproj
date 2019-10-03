@@ -27,25 +27,20 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\src\05_LoadingModel\Shaders\D3D12\basic.frag" />
-    <None Include="..\..\..\src\05_LoadingModel\Shaders\D3D12\basic.vert" />
-    <None Include="..\..\..\src\05_LoadingModel\Shaders\D3D12\profile.frag" />
-    <None Include="..\..\..\src\05_LoadingModel\Shaders\D3D12\profile.vert" />
-    <None Include="..\..\..\src\05_LoadingModel\Shaders\Vulkan\basic.frag" />
-    <None Include="..\..\..\src\05_LoadingModel\Shaders\Vulkan\basic.vert" />
-    <None Include="..\..\..\src\05_LoadingModel\Shaders\Vulkan\profile.frag" />
-    <None Include="..\..\..\src\05_LoadingModel\Shaders\Vulkan\profile.vert" />
+    <ClCompile Include="..\..\..\src\10_BloomHDR\BloomHDR.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\src\05_LoadingModel\LoadingModel.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\..\..\src\common.h" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\basic.frag" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\basic.vert" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\light.frag" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\light.vert" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\profile.frag" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\profile.vert" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{a2611786-b782-4561-82d1-1b6051f5566c}</ProjectGuid>
+    <ProjectGuid>{e7566989-8929-446e-9b1e-7bd49d1df538}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
-    <RootNamespace>_05_LoadingModel</RootNamespace>
+    <RootNamespace>_10_BloomHDR</RootNamespace>
     <WindowsTargetPlatformVersion>10.0.17763.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
