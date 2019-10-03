@@ -192,7 +192,7 @@ struct
 	mat4	pToWorld;
 } gUniformData;
 
-Buffer* pUBOs[gImageCount] = { NULL };
+Buffer* pUniformBuffers[gImageCount] = { NULL };
 
 RenderPassMap	RenderPasses;
 
@@ -297,9 +297,9 @@ public:
 				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Forward]->pRootSignature);
 
 				DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Forward]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
-				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Forward]->pDescriptorSets[0]);
+				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
 				setDesc = { RenderPasses[RenderPass::Forward]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
-				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Forward]->pDescriptorSets[1]);
+				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
 			}
 		}
 
@@ -317,7 +317,7 @@ public:
 
 				for (uint32_t i = 0; i < gImageCount; ++i)
 				{
-					bufferDesc.ppBuffer = &pUBOs[i];
+					bufferDesc.ppBuffer = &pUniformBuffers[i];
 					addResource(&bufferDesc);
 				}
 			}
@@ -417,7 +417,7 @@ public:
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
-			removeResource(pUBOs[i]);
+			removeResource(pUniformBuffers[i]);
 		}
 
 		//Delete rendering passes
@@ -619,21 +619,21 @@ public:
 		RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
 
 		// Update uniform buffers
-		BufferUpdateDesc viewProjCbv = { pUBOs[gFrameIndex], &gUniformData };
+		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &gUniformData };
 		updateResource(&viewProjCbv);
 
 		// Update light uniform buffers
-		BufferUpdateDesc lightBuffUpdate = { pLightBuffer, &lightData };
-		updateResource(&lightBuffUpdate);
+		//BufferUpdateDesc lightBuffUpdate = { pLightBuffer, &lightData };
+		//updateResource(&lightBuffUpdate);
 
-		BufferUpdateDesc pointLightBuffUpdate = { lightBuffers.pPointLightsBuffer, &pointLights };
-		updateResource(&pointLightBuffUpdate);
+		//BufferUpdateDesc pointLightBuffUpdate = { lightBuffers.pPointLightsBuffer, &pointLights };
+		//updateResource(&pointLightBuffUpdate);
 
-		BufferUpdateDesc dirLightBuffUpdate = { lightBuffers.pDirLightsBuffer, &directionalLights };
-		updateResource(&dirLightBuffUpdate);
+		//BufferUpdateDesc dirLightBuffUpdate = { lightBuffers.pDirLightsBuffer, &directionalLights };
+		//updateResource(&dirLightBuffUpdate);
 
-		BufferUpdateDesc spotLightBuffUpdate = { lightBuffers.pSpotLightsBuffer, &spotLights };
-		updateResource(&spotLightBuffUpdate);
+		//BufferUpdateDesc spotLightBuffUpdate = { lightBuffers.pSpotLightsBuffer, &spotLights };
+		//updateResource(&spotLightBuffUpdate);
 
 		// Load Actions
 		LoadActionsDesc loadActions = {};
@@ -651,7 +651,7 @@ public:
 			beginCmd(cmd);
 			cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
 			{
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Offscreen Pass", true);
+				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Forward Pass", true);
 
 				TextureBarrier textureBarriers[2] = {
 					{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
@@ -840,26 +840,26 @@ public:
 				params[0].ppTextures = &textures.pTextureColor;
 				params[1].pName = "TextureSpecular";
 				params[1].ppTextures = &textures.pTextureSpecular;
-				updateDescriptorSet(pRenderer, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE], 2, params);
+				//updateDescriptorSet(pRenderer, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE], 2, params);
 			}
 
 			// DESCRIPTOR_UPDATE_FREQ_PER_FRAME
 			{
-				DescriptorData params[5] = {};
-				params[0].pName = "LightData";
-				params[0].ppBuffers = &pLightBuffer;
-				params[1].pName = "DirectionalLights";
-				params[1].ppBuffers = &lightBuffers.pDirLightsBuffer;
-				params[2].pName = "PointLights";
-				params[2].ppBuffers = &lightBuffers.pPointLightsBuffer;
-				params[3].pName = "SpotLights";
-				params[3].ppBuffers = &lightBuffers.pSpotLightsBuffer;
 
 				for (uint32_t i = 0; i < gImageCount; ++i)
 				{
-					params[4].pName = "UniformData";
-					params[4].ppBuffers = &pUBOs[i];
-					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 5, params);
+					DescriptorData params[1] = {};
+					params[0].pName = "UniformData";
+					params[0].ppBuffers = &pUniformBuffers[i];
+					//params[1].pName = "LightData";
+					//params[1].ppBuffers = &pLightBuffer;
+					//params[2].pName = "DirectionalLights";
+					//params[2].ppBuffers = &lightBuffers.pDirLightsBuffer;
+					//params[3].pName = "PointLights";
+					//params[3].ppBuffers = &lightBuffers.pPointLightsBuffer;
+					//params[4].pName = "SpotLights";
+					//params[4].ppBuffers = &lightBuffers.pSpotLightsBuffer;
+					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
 				}
 			}
 		}

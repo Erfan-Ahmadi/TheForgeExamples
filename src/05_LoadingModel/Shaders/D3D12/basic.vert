@@ -1,5 +1,3 @@
-#define MAX_INSTANCES 8
-
 cbuffer UniformData : register(b0, UPDATE_FREQ_PER_FRAME)
 {
 	float4x4 view;
