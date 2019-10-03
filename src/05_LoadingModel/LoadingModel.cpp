@@ -1,5 +1,8 @@
 #include "../common.h"
 
+#include "Common_3/OS/Interfaces/IProfiler.h"
+#include "Middleware_3/UI/AppUI.h"
+
 //EASTL includes
 #include "Common_3/ThirdParty/OpenSource/EASTL/vector.h"
 #include "Common_3/ThirdParty/OpenSource/EASTL/string.h"
@@ -22,21 +25,30 @@ static_assert(gSpotLights <= gMaxSpotLights, "");
 
 const uint32_t	gImageCount = 3;
 
-bool			gMicroProfiler = false;
-bool			bPrevToggleMicroProfiler = false;
-
-uint32_t		gNumModelPoints;
-
 Renderer* pRenderer = NULL;
 
 Queue* pGraphicsQueue = NULL;
-Sampler* pSampler = NULL;
 
 Fence* pRenderCompleteFences[gImageCount] = { NULL };
 Semaphore* pRenderCompleteSemaphores[gImageCount] = { NULL };
 Semaphore* pImageAquiredSemaphore = NULL;
+Sampler* pSampler;
 
 SwapChain* pSwapChain = NULL;
+
+uint32_t			gFrameIndex = 0;
+
+bool           gMicroProfiler = false;
+bool           bPrevToggleMicroProfiler = false;
+
+UIApp gAppUI;
+GuiComponent* pGui = NULL;
+VirtualJoystickUI gVirtualJoystick;
+GpuProfiler* pGpuProfiler = NULL;
+ICameraController* pCameraController = NULL;
+TextDrawDesc gFrameTimeDraw = TextDrawDesc(0, 0xff00ffff, 18);
+
+RenderTarget* pDepthBuffer;
 
 RasterizerState* pRasterDefault = NULL;
 DepthState* pDepthDefault = NULL;
@@ -48,28 +60,11 @@ struct
 	Texture* pTextureSpecular = NULL;
 } textures;
 
-
-uint32_t			gFrameIndex = 0;
-
-UIApp gAppUI;
-GuiComponent* pGui = NULL;
-VirtualJoystickUI gVirtualJoystick;
-GpuProfiler* pGpuProfiler = NULL;
-ICameraController* pCameraController = NULL;
-TextDrawDesc gFrameTimeDraw = TextDrawDesc(0, 0xff00ffff, 18);
-
-Buffer* pUniformBuffers[gImageCount] = { NULL };
-
-struct MeshBatch
+const char* pTexturesFileNames[] =
 {
-	Buffer* pPositionStream;
-	Buffer* pNormalStream;
-	Buffer* pUVStream;
-	Buffer* pIndicesStream;
-	size_t mCountIndices;
+	"lion/lion_albedo",
+	"lion/lion_specular"
 };
-
-RenderTarget* pDepthBuffer = NULL;
 
 class RenderPassData
 {
@@ -101,19 +96,19 @@ struct RenderPass
 
 typedef eastl::unordered_map<RenderPass::Enum, RenderPassData*> RenderPassMap;
 
-RenderPassMap	RenderPasses;
+struct MeshBatch
+{
+	Buffer* pPositionStream;
+	Buffer* pNormalStream;
+	Buffer* pUVStream;
+	Buffer* pIndicesStream;
+	size_t mCountIndices;
+};
 
 struct SceneData
 {
 	eastl::vector<MeshBatch*> meshes;
 } sceneData;
-
-struct UniformBuffer
-{
-	mat4	view;
-	mat4	proj;
-	mat4	pToWorld;
-} uniformData;
 
 struct DirectionalLight
 {
@@ -169,11 +164,7 @@ struct SpotLight
 #endif
 };
 
-DirectionalLight	directionalLights[gDirectionalLights];
-PointLight			pointLights[gPointLights];
-SpotLight			spotLights[gSpotLights];
-
-struct LightBuffer
+struct
 {
 	int numDirectionalLights;
 	int numPointLights;
@@ -181,7 +172,9 @@ struct LightBuffer
 	alignas(16) float3 viewPos;
 } lightData;
 
-Buffer* pLightBuffer = NULL;
+DirectionalLight	directionalLights[gDirectionalLights];
+PointLight			pointLights[gPointLights];
+SpotLight			spotLights[gSpotLights];
 
 struct
 {
@@ -190,15 +183,21 @@ struct
 	Buffer* pSpotLightsBuffer = NULL;
 } lightBuffers;
 
+Buffer* pLightBuffer = NULL;
 
-const char* pTexturesFileNames[] =
+struct
 {
-	"lion/lion_albedo",
-	"lion/lion_specular"
-};
+	mat4	view;
+	mat4	proj;
+	mat4	pToWorld;
+} gUniformData;
+
+Buffer* pUBOs[gImageCount] = { NULL };
+
+RenderPassMap	RenderPasses;
 
 const char* pszBases[FSR_Count] = {
-	"../../../../../The-Forge/Examples_3/Unit_Tests/src/01_Transformations/",		// FSR_BinShaders
+	"../../../../src/Shaders/bin",													// FSR_BinShaders
 	"../../../../src/05_LoadingModel/",												// FSR_SrcShaders
 	"../../../../art/",																// FSR_Textures
 	"../../../../art/",																// FSR_Meshes
@@ -210,8 +209,6 @@ const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Middleware_3/Text/",									// FSR_MIDDLEWARE_TEXT
 	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
-
-AssimpImporter::Model gModel;
 
 class LoadingModel : public IApp
 {
@@ -234,7 +231,7 @@ public:
 		queueDesc.mFlag = QUEUE_FLAG_NONE;
 		addQueue(pRenderer, &queueDesc, &pGraphicsQueue);
 
-		// Forward pass
+		// Gbuffer pass
 		RenderPassData* pass =
 			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), pRenderer, pGraphicsQueue, gImageCount);
 		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Forward, pass));
@@ -289,7 +286,7 @@ public:
 		const char* samplerNames = { "uSampler0 " };
 
 		{
-			// Root Signature for Offscreen Pipeline
+			// Root Signature for Forward Pipeline
 			{
 				RootSignatureDesc rootDesc = {};
 				rootDesc.mShaderCount = 1;
@@ -314,13 +311,13 @@ public:
 				bufferDesc = {};
 				bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 				bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
-				bufferDesc.mDesc.mSize = sizeof(uniformData);
+				bufferDesc.mDesc.mSize = sizeof(gUniformData);
 				bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
 				bufferDesc.pData = NULL;
 
 				for (uint32_t i = 0; i < gImageCount; ++i)
 				{
-					bufferDesc.ppBuffer = &pUniformBuffers[i];
+					bufferDesc.ppBuffer = &pUBOs[i];
 					addResource(&bufferDesc);
 				}
 			}
@@ -420,7 +417,7 @@ public:
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
-			removeResource(pUniformBuffers[i]);
+			removeResource(pUBOs[i]);
 		}
 
 		//Delete rendering passes
@@ -565,15 +562,17 @@ public:
 
 		const float aspectInverse = (float)mSettings.mHeight / (float)mSettings.mWidth;
 		const float horizontal_fov = PI / 2.0f;
-		mat4        projMat = mat4::perspective(horizontal_fov, aspectInverse, 0.1f, 1000.0f);
+		mat4        projMat = mat4::perspective(horizontal_fov, aspectInverse, 0.1f, 100.0f);
 
-		uniformData.view = viewMat;
-		uniformData.proj = projMat;
+		gUniformData.view = viewMat;
+		gUniformData.proj = projMat;
 
 		// Update Instance Data
-		uniformData.pToWorld = mat4::translation(Vector3(0.0f, -1, 5)) *
+		gUniformData.pToWorld = mat4::translation(Vector3(0.0f, -1, 7)) *
 			mat4::rotationY(currentTime) *
-			mat4::scale(Vector3(0.07f));
+			mat4::scale(Vector3(0.1f));
+
+		viewMat.setTranslation(vec3(0));
 
 		directionalLights[0].direction = float3{ 0.0f, -1.0f, 0.0f };
 		directionalLights[0].ambient = float3{ 0.05f, 0.05f, 0.05f };
@@ -599,8 +598,6 @@ public:
 
 		lightData.viewPos = v3ToF3(pCameraController->getViewPosition());
 
-		viewMat.setTranslation(vec3(0));
-
 		if (gMicroProfiler != bPrevToggleMicroProfiler)
 		{
 			toggleProfiler();
@@ -619,14 +616,10 @@ public:
 
 		Semaphore* pRenderCompleteSemaphore = pRenderCompleteSemaphores[gFrameIndex];
 		Fence* pRenderCompleteFence = pRenderCompleteFences[gFrameIndex];
-		
-		FenceStatus fenceStatus;
-		getFenceStatus(pRenderer, pRenderCompleteFence, &fenceStatus);
-		if (fenceStatus == FENCE_STATUS_INCOMPLETE)
-			waitForFences(pRenderer, 1, &pRenderCompleteFence);
+		RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
 
 		// Update uniform buffers
-		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &uniformData };
+		BufferUpdateDesc viewProjCbv = { pUBOs[gFrameIndex], &gUniformData };
 		updateResource(&viewProjCbv);
 
 		// Update light uniform buffers
@@ -653,15 +646,12 @@ public:
 		loadActions.mClearDepth.depth = 1.0f;
 		loadActions.mClearDepth.stencil = 0;
 
-		// Forward Pass
 		Cmd* cmd = RenderPasses[RenderPass::Forward]->ppCmds[gFrameIndex];
 		{
-			RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
-
 			beginCmd(cmd);
 			cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
 			{
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Forward Pass", true);
+				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Offscreen Pass", true);
 
 				TextureBarrier textureBarriers[2] = {
 					{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
@@ -670,15 +660,24 @@ public:
 
 				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
 
-				cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, pDepthBuffer, &loadActions, NULL, NULL, -1, -1);
-				cmdSetViewport(cmd, 0.0f, 0.0f, (float)pSwapChainRenderTarget->mDesc.mWidth, (float)pSwapChainRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
-				cmdSetScissor(cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth, pSwapChainRenderTarget->mDesc.mHeight);
-				
+				cmdBindRenderTargets(
+					cmd,
+					1,
+					&pSwapChainRenderTarget,
+					pDepthBuffer,
+					&loadActions, NULL, NULL, -1, -1);
+
+				cmdSetViewport(
+					cmd, 0.0f, 0.0f, (float)pSwapChainRenderTarget->mDesc.mWidth,
+					(float)pSwapChainRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+				cmdSetScissor(
+					cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth,
+					pSwapChainRenderTarget->mDesc.mHeight);
+
 				cmdBindPipeline(cmd, RenderPasses[RenderPass::Forward]->pPipeline);
 				{
 					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
 					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
-
 					Buffer* pVertexBuffers[] = { sceneData.meshes[0]->pPositionStream, sceneData.meshes[0]->pNormalStream, sceneData.meshes[0]->pUVStream };
 					cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
 
@@ -724,10 +723,11 @@ public:
 			endCmd(cmd);
 		}
 
-		// Submit Second Pass Command Buffer
 		queueSubmit(pGraphicsQueue, 1, &cmd, pRenderCompleteFence, 1, &pImageAquiredSemaphore, 1, &pRenderCompleteSemaphore);
 
 		queuePresent(pGraphicsQueue, pSwapChain, gFrameIndex, 1, &pRenderCompleteSemaphore);
+
+		waitForFences(pRenderer, 1, &pRenderCompleteFence);
 
 		flipProfiler();
 	}
@@ -812,42 +812,6 @@ public:
 		}
 	}
 
-	void PrepareDescriptorSets()
-	{
-		// Forward Descriptor Sets
-		{
-			// DESCRIPTOR_UPDATE_FREQ_PER_FRAME
-			{
-				DescriptorData params[5] = {};
-				params[0].pName = "LightData";
-				params[0].ppBuffers = &pLightBuffer;
-				params[1].pName = "DirectionalLights";
-				params[1].ppBuffers = &lightBuffers.pDirLightsBuffer;
-				params[2].pName = "PointLights";
-				params[2].ppBuffers = &lightBuffers.pPointLightsBuffer;
-				params[3].pName = "SpotLights";
-				params[3].ppBuffers = &lightBuffers.pSpotLightsBuffer;
-
-				for (uint32_t i = 0; i < gImageCount; ++i)
-				{
-					params[4].pName = "UniformData";
-					params[4].ppBuffers = &pUniformBuffers[gFrameIndex];
-					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 5, params);
-				}
-			}
-			// DESCRIPTOR_UPDATE_FREQ_PER_NONE
-			{
-				DescriptorData params[2] = {};
-				params[0].pName = "Texture";
-				params[0].ppTextures = &textures.pTextureColor;
-				params[1].pName = "TextureSpecular";
-				params[1].ppTextures = &textures.pTextureSpecular;
-				updateDescriptorSet(pRenderer, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE], 2, params);
-
-			}
-		}
-	}
-
 	const char* GetName() { return "05_LoadingModel"; }
 
 	void RecenterCameraView(float maxDistance, vec3 lookAt = vec3(0))
@@ -865,7 +829,42 @@ public:
 		pCameraController->moveTo(p);
 		pCameraController->lookAt(lookAt);
 	}
-	
+
+	void PrepareDescriptorSets()
+	{
+		{
+			// DESCRIPTOR_UPDATE_FREQ_NONE
+			{
+				DescriptorData params[2] = {};
+				params[0].pName = "Texture";
+				params[0].ppTextures = &textures.pTextureColor;
+				params[1].pName = "TextureSpecular";
+				params[1].ppTextures = &textures.pTextureSpecular;
+				updateDescriptorSet(pRenderer, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE], 2, params);
+			}
+
+			// DESCRIPTOR_UPDATE_FREQ_PER_FRAME
+			{
+				DescriptorData params[5] = {};
+				params[0].pName = "LightData";
+				params[0].ppBuffers = &pLightBuffer;
+				params[1].pName = "DirectionalLights";
+				params[1].ppBuffers = &lightBuffers.pDirLightsBuffer;
+				params[2].pName = "PointLights";
+				params[2].ppBuffers = &lightBuffers.pPointLightsBuffer;
+				params[3].pName = "SpotLights";
+				params[3].ppBuffers = &lightBuffers.pSpotLightsBuffer;
+
+				for (uint32_t i = 0; i < gImageCount; ++i)
+				{
+					params[4].pName = "UniformData";
+					params[4].ppBuffers = &pUBOs[i];
+					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 5, params);
+				}
+			}
+		}
+	}
+
 	void CreateLightsBuffer()
 	{
 		BufferLoadDesc bufferDesc = {};
@@ -936,16 +935,17 @@ public:
 
 		AssimpImporter importer;
 
-		if (!importer.ImportModel("../../../../art/Meshes/lion.obj", &gModel))
+		AssimpImporter::Model model;
+		if (!importer.ImportModel("../../../../art/Meshes/lion.obj", &model))
 		{
 			return false;
 		}
 
-		size_t meshSize = gModel.mMeshArray.size();
+		size_t meshSize = model.mMeshArray.size();
 
 		for (size_t i = 0; i < meshSize; ++i)
 		{
-			AssimpImporter::Mesh subMesh = gModel.mMeshArray[i];
+			AssimpImporter::Mesh subMesh = model.mMeshArray[i];
 
 			MeshBatch* pMeshBatch = (MeshBatch*)conf_placement_new<MeshBatch>(conf_calloc(1, sizeof(MeshBatch)));
 
