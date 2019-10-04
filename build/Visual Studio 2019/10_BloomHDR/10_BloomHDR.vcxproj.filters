@@ -38,5 +38,11 @@
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\light.vert">
       <Filter>Shaders\D3D12</Filter>
     </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\tonemapping.vert">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\tonemapping.frag">
+      <Filter>Shaders\D3D12</Filter>
+    </None>
   </ItemGroup>
 </Project>
