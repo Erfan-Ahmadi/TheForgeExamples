@@ -66,6 +66,9 @@ const char* pTexturesFileNames[] =
 	"lion/lion_specular"
 };
 
+CmdPool* pCmdPool;
+Cmd** ppCmds;
+
 class RenderPassData
 {
 public:
@@ -73,24 +76,14 @@ public:
 	RootSignature* pRootSignature;
 	DescriptorSet* pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_COUNT];
 	Pipeline* pPipeline;
-	CmdPool* pCmdPool;
-	Cmd** ppCmds;
-	Buffer* pPerPassCB[gImageCount];
-	eastl::vector<RenderTarget*> RenderTargets;
-	eastl::vector<Texture*>      Textures;
-
-	RenderPassData(Renderer* pRenderer, Queue* bGraphicsQueue, int ImageCount)
-	{
-		addCmdPool(pRenderer, bGraphicsQueue, false, &pCmdPool);
-		addCmd_n(pCmdPool, false, ImageCount, &ppCmds);
-	}
 };
 
 struct RenderPass
 {
 	enum Enum
 	{
-		Forward
+		Forward,
+		Light
 	};
 };
 
@@ -193,6 +186,15 @@ struct
 	mat4	pToWorld;
 } gUniformData;
 
+struct instanceInfo
+{
+	float3 position;
+	float3 color;
+};
+
+instanceInfo instanceData[gMaxPointLights];
+Buffer* pInstanceBuffer;
+
 Buffer* pUniformBuffers[gImageCount] = { NULL };
 
 RenderPassMap	RenderPasses;
@@ -211,10 +213,10 @@ const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
 
-class LoadingModel : public IApp
+class BloomHDR : public IApp
 {
 public:
-	LoadingModel()
+	BloomHDR()
 	{
 	}
 
@@ -232,10 +234,18 @@ public:
 		queueDesc.mFlag = QUEUE_FLAG_NONE;
 		addQueue(pRenderer, &queueDesc, &pGraphicsQueue);
 
-		// Gbuffer pass
+		// Forward pass
 		RenderPassData* pass =
-			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), pRenderer, pGraphicsQueue, gImageCount);
+			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)));
 		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Forward, pass));
+
+		// Light pass
+		pass =
+			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)));
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Light, pass));
+
+		addCmdPool(pRenderer, pGraphicsQueue, false, &pCmdPool);
+		addCmd_n(pCmdPool, false, gImageCount, &ppCmds);
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
@@ -252,6 +262,9 @@ public:
 		shaderDesc.mStages[0] = { "basic.vert", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[1] = { "basic.frag", NULL, 0, FSR_SrcShaders };
 		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Forward]->pShader);
+		shaderDesc.mStages[0] = { "light.vert", NULL, 0, FSR_SrcShaders };
+		shaderDesc.mStages[1] = { "light.frag", NULL, 0, FSR_SrcShaders };
+		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Light]->pShader);
 
 		//Create rasteriser state objects
 		{
@@ -302,6 +315,19 @@ public:
 				setDesc = { RenderPasses[RenderPass::Forward]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
 				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
 			}
+
+			// Root Signature for Forward Pipeline
+			{
+				RootSignatureDesc rootDesc = {};
+				rootDesc.mShaderCount = 1;
+				rootDesc.ppShaders = &RenderPasses[RenderPass::Light]->pShader;
+				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Light]->pRootSignature);
+
+				DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Light]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
+				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+				setDesc = { RenderPasses[RenderPass::Light]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
+				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+			}
 		}
 
 		// Create Uniform Buffers
@@ -321,6 +347,20 @@ public:
 					bufferDesc.ppBuffer = &pUniformBuffers[i];
 					addResource(&bufferDesc);
 				}
+			}
+
+			// Instance
+			{
+				BufferLoadDesc bufferDesc = {};
+				bufferDesc = {};
+				bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
+				bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+				bufferDesc.mDesc.mVertexStride = sizeof(instanceInfo);
+				bufferDesc.mDesc.mSize = sizeof(instanceInfo) * gMaxPointLights;
+				bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+				bufferDesc.pData = NULL;
+				bufferDesc.ppBuffer = &pInstanceBuffer;
+				addResource(&bufferDesc);
 			}
 		}
 
@@ -433,25 +473,6 @@ public:
 				if (pass->pDescriptorSets[i])
 					removeDescriptorSet(pRenderer, pass->pDescriptorSets[i]);
 
-			for (RenderTarget* rt : pass->RenderTargets)
-			{
-				removeRenderTarget(pRenderer, rt);
-			}
-
-			for (Texture* texture : pass->Textures)
-			{
-				removeResource(texture);
-			}
-
-			for (uint32_t j = 0; j < gImageCount; ++j)
-			{
-				if (pass->pPerPassCB[j])
-					removeResource(pass->pPerPassCB[j]);
-			}
-
-			removeCmd_n(pass->pCmdPool, gImageCount, pass->ppCmds);
-			removeCmdPool(pRenderer, pass->pCmdPool);
-
 			removeShader(pRenderer, pass->pShader);
 
 			removeRootSignature(pRenderer, pass->pRootSignature);
@@ -525,18 +546,6 @@ public:
 		{
 			RenderPassData* pass = iter->second;
 
-			for (RenderTarget* rt : pass->RenderTargets)
-			{
-				removeRenderTarget(pRenderer, rt);
-			}
-
-			for (Texture* texture : pass->Textures)
-			{
-				removeResource(texture);
-			}
-			pass->RenderTargets.clear();
-			pass->Textures.clear();
-
 			if (pass->pPipeline)
 			{
 				removePipeline(pRenderer, pass->pPipeline);
@@ -581,7 +590,7 @@ public:
 		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };
 		lightData.numDirectionalLights = 0;
 
-		pointLights[0].position = float3{ 0.0f, 4.0f + 5 * sin(currentTime), 0.0f };
+		pointLights[0].position = float3{ 0.0f, 1.0f, 0.0f + 7 * sin(0.6f * currentTime) };
 		pointLights[0].ambient = float3{ 0.5f, 0.5f, 0.5f };
 		pointLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
 		pointLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
@@ -642,6 +651,9 @@ public:
 		BufferUpdateDesc spotLightBuffUpdate = { lightBuffers.pSpotLightsBuffer, &spotLights };
 		updateResource(&spotLightBuffUpdate);
 
+		BufferUpdateDesc instanceDataUpdate = { pInstanceBuffer, &instanceData };
+		updateResource(&instanceDataUpdate);
+
 		// Load Actions
 		LoadActionsDesc loadActions = {};
 		loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
@@ -653,7 +665,7 @@ public:
 		loadActions.mClearDepth.depth = 1.0f;
 		loadActions.mClearDepth.stencil = 0;
 
-		Cmd* cmd = RenderPasses[RenderPass::Forward]->ppCmds[gFrameIndex];
+		Cmd* cmd = ppCmds[gFrameIndex];
 		{
 			beginCmd(cmd);
 			cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
@@ -693,6 +705,15 @@ public:
 						cmdBindIndexBuffer(cmd, sceneData.meshes[i]->pIndicesStream, 0);
 						cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
 					}
+				}
+
+				cmdBindPipeline(cmd, RenderPasses[RenderPass::Light]->pPipeline);
+				{
+					Buffer* pVertexBuffers[] = { sceneData.sphere->pPositionStream, pInstanceBuffer };
+					cmdBindVertexBuffer(cmd, 2, pVertexBuffers, NULL);
+
+					cmdBindIndexBuffer(cmd, sceneData.sphere->pIndicesStream, 0);
+					cmdDrawIndexedInstanced(cmd, sceneData.sphere->mCountIndices, 0, gPointLights, 0, 0);
 				}
 
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
@@ -817,6 +838,49 @@ public:
 
 			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Forward]->pPipeline);
 		}
+
+		// Light
+		{
+			VertexLayout vertexLayout = {};
+			vertexLayout.mAttribCount = 3;
+
+			vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
+			vertexLayout.mAttribs[0].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
+			vertexLayout.mAttribs[0].mBinding = 0;
+			vertexLayout.mAttribs[0].mLocation = 0;
+			vertexLayout.mAttribs[0].mOffset = 0;
+
+			vertexLayout.mAttribs[1].mSemantic = SEMANTIC_TEXCOORD0;
+			vertexLayout.mAttribs[1].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
+			vertexLayout.mAttribs[1].mRate = VERTEX_ATTRIB_RATE_INSTANCE;
+			vertexLayout.mAttribs[1].mBinding = 1;
+			vertexLayout.mAttribs[1].mLocation = 1;
+			vertexLayout.mAttribs[1].mOffset = 0;
+
+			vertexLayout.mAttribs[2].mSemantic = SEMANTIC_COLOR;
+			vertexLayout.mAttribs[2].mFormat = TinyImageFormat_R8G8B8A8_SNORM;
+			vertexLayout.mAttribs[2].mRate = VERTEX_ATTRIB_RATE_INSTANCE;
+			vertexLayout.mAttribs[2].mBinding = 1;
+			vertexLayout.mAttribs[2].mLocation = 2;
+			vertexLayout.mAttribs[2].mOffset = 3 * sizeof(float);
+
+			PipelineDesc desc = {};
+			desc.mType = PIPELINE_TYPE_GRAPHICS;
+			GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
+			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
+			pipelineSettings.mRenderTargetCount = 1;
+			pipelineSettings.pDepthState = pDepthDefault;
+			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
+			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
+			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
+			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
+			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Light]->pRootSignature;
+			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::Light]->pShader;
+			pipelineSettings.pVertexLayout = &vertexLayout;
+			pipelineSettings.pRasterizerState = pRasterDefault;
+
+			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Light]->pPipeline);
+		}
 	}
 
 	const char* GetName() { return "10_BloomHDR"; }
@@ -867,6 +931,19 @@ public:
 					params[4].pName = "SpotLights";
 					params[4].ppBuffers = &lightBuffers.pSpotLightsBuffer;
 					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 5, params);
+				}
+			}
+		}
+
+		{
+			// DESCRIPTOR_UPDATE_FREQ_PER_FRAME
+			{
+				for (uint32_t i = 0; i < gImageCount; ++i)
+				{
+					DescriptorData params[1] = {};
+					params[0].pName = "UniformData";
+					params[0].ppBuffers = &pUniformBuffers[i];
+					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
 				}
 			}
 		}
@@ -994,45 +1071,47 @@ public:
 				bufferDesc.ppBuffer = &pMeshBatch->pIndicesStream;
 				addResource(&bufferDesc);
 			}
+		}
 
+		{
 			if (!importer.ImportModel("../../../../art/Meshes/lowpoly/geosphere.obj", &model))
 			{
 				return false;
 			}
+
+			size_t meshSize = model.mMeshArray.size();
+
+			AssimpImporter::Mesh subMesh = model.mMeshArray[0];
+
+			MeshBatch* pMeshBatch = (MeshBatch*)conf_placement_new<MeshBatch>(conf_calloc(1, sizeof(MeshBatch)));
+
+			sceneData.sphere = pMeshBatch;
+
+			// Vertex Buffer
+			BufferLoadDesc bufferDesc = {};
+			bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
+			bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+			bufferDesc.mDesc.mVertexStride = sizeof(float3);
+			bufferDesc.mDesc.mSize = bufferDesc.mDesc.mVertexStride * subMesh.mPositions.size();
+			bufferDesc.pData = subMesh.mPositions.data();
+			bufferDesc.ppBuffer = &pMeshBatch->pPositionStream;
+			addResource(&bufferDesc);
+
+			pMeshBatch->mCountIndices = subMesh.mIndices.size();
+
+			// Index buffer
+			bufferDesc = {};
+			bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_INDEX_BUFFER;
+			bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
+			bufferDesc.mDesc.mIndexType = INDEX_TYPE_UINT32;
+			bufferDesc.mDesc.mSize = sizeof(uint) * (uint)subMesh.mIndices.size();
+			bufferDesc.pData = subMesh.mIndices.data();
+			bufferDesc.ppBuffer = &pMeshBatch->pIndicesStream;
+			addResource(&bufferDesc);
 		}
-
-		size_t meshSize = model.mMeshArray.size();
-
-		AssimpImporter::Mesh subMesh = model.mMeshArray[0];
-
-		MeshBatch* pMeshBatch = (MeshBatch*)conf_placement_new<MeshBatch>(conf_calloc(1, sizeof(MeshBatch)));
-
-		sceneData.sphere = pMeshBatch;
-
-		// Vertex Buffer
-		BufferLoadDesc bufferDesc = {};
-		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
-		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
-		bufferDesc.mDesc.mVertexStride = sizeof(float3);
-		bufferDesc.mDesc.mSize = bufferDesc.mDesc.mVertexStride * subMesh.mPositions.size();
-		bufferDesc.pData = subMesh.mPositions.data();
-		bufferDesc.ppBuffer = &pMeshBatch->pPositionStream;
-		addResource(&bufferDesc);
-
-		pMeshBatch->mCountIndices = subMesh.mIndices.size();
-
-		// Index buffer
-		bufferDesc = {};
-		bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_INDEX_BUFFER;
-		bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
-		bufferDesc.mDesc.mIndexType = INDEX_TYPE_UINT32;
-		bufferDesc.mDesc.mSize = sizeof(uint) * (uint)subMesh.mIndices.size();
-		bufferDesc.pData = subMesh.mIndices.data();
-		bufferDesc.ppBuffer = &pMeshBatch->pIndicesStream;
-		addResource(&bufferDesc);
 
 		return true;
 	}
 };
 
-DEFINE_APPLICATION_MAIN(LoadingModel)
+DEFINE_APPLICATION_MAIN(BloomHDR)

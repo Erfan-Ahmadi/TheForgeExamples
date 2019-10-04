@@ -39,7 +39,6 @@ cbuffer LightData : register(b1, UPDATE_FREQ_PER_FRAME)
 	int numDirectionalLights;
 	int numPointLights;
 	int numSpotLights;
-	bool lit;
 	float3 viewPos;
 };
 
@@ -61,8 +60,6 @@ float3 calculateSpotLight(SpotLight spotLight, float3 normal, float3 viewDir, fl
 
 float4 main(VSOutput input) : SV_TARGET
 {
-	if(!lit)
-		return float4(1.0f, 1.0f, 1.0f, 1.0f);
 	float3 normal = normalize(input.Normal.xyz);
 	float3 viewDir = normalize(viewPos - input.FragPos.xyz);
 	
