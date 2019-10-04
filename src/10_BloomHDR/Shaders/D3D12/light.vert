@@ -22,6 +22,6 @@ VSOutput main(VSInput input)
 	VSOutput result;
 	float4 worldPos = float4(input.InstancePosition + 0.01f * input.Position, 1.0f); 
 	result.Position = mul(proj, mul(view,  worldPos));
-	result.Color = input.InstanceColor;
+	result.Color = input.InstanceColor * 5;
 	return result;
 }

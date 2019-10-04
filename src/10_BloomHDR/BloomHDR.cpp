@@ -95,6 +95,8 @@ struct RenderPass
 
 typedef eastl::unordered_map<RenderPass::Enum, RenderPassData*> RenderPassMap;
 
+RenderPassMap	RenderPasses;
+
 struct MeshBatch
 {
 	Buffer* pPositionStream;
@@ -203,7 +205,14 @@ Buffer* pInstanceColorBuffer;
 
 Buffer* pUniformBuffers[gImageCount] = { NULL };
 
-RenderPassMap	RenderPasses;
+struct 
+{
+	float exposure = 1.0f;
+	float gamma = 2.2f;
+	bool tonemap = false;
+} toneMappingData;
+
+Buffer* pToneMappingBuffer[gImageCount];
 
 const char* pszBases[FSR_Count] = {
 	"../../../../src/Shaders/bin",													// FSR_BinShaders
@@ -395,6 +404,23 @@ public:
 				bufferDesc.ppBuffer = &pInstanceColorBuffer;
 				addResource(&bufferDesc);
 			}
+			
+			// Tone Mapping
+			{
+				BufferLoadDesc bufferDesc = {};
+				bufferDesc = {};
+				bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+				bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+				bufferDesc.mDesc.mSize = sizeof(toneMappingData);
+				bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+				bufferDesc.pData = NULL;
+
+				for (uint32_t i = 0; i < gImageCount; ++i)
+				{
+					bufferDesc.ppBuffer = &pToneMappingBuffer[i];
+					addResource(&bufferDesc);
+				}
+			}
 		}
 
 		CreateLightsBuffer();
@@ -421,6 +447,9 @@ public:
 		pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
 
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &gMicroProfiler));
+		pGui->AddWidget(CheckboxWidget("ToneMapping", &toneMappingData.tonemap));
+		pGui->AddWidget(SliderFloatWidget("Exposure", &toneMappingData.exposure, 0.1f, 10.0f, 0.25f, "%.2f"));
+		pGui->AddWidget(SliderFloatWidget("Gamma", &toneMappingData.gamma, 1.5f, 3.0f, 0.7f, "%.2f"));
 
 		// Camera
 		CameraMotionParameters cmp{ 40.0f, 30.0f, 100.0f };
@@ -629,17 +658,17 @@ public:
 		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };
 		lightData.numDirectionalLights = 0;
 
-		pointLights[0].position = float3{ 5 * sin(currentTime * 2.5f), 0.0f, 6 + 5 * cos(currentTime * 2.5f) };
-		pointLights[0].ambient = float3{ 0.5f, 0.5f, 0.5f };
-		pointLights[0].diffuse = float3{ 1.0f, 1.0f, 1.0f };
-		pointLights[0].specular = float3{ 1.0f, 1.0f, 1.0f };
+		pointLights[0].position = float3{ 1 * sin(currentTime * 0.5f), 1.0f, 6 + 1.0f * cos(currentTime * 0.5f) };
+		pointLights[0].ambient = float3{ 0.02f, 0.02f, 0.02f };
+		pointLights[0].diffuse = float3{ 0.2f, 1.0f, 1.0f };
+		pointLights[0].specular = float3{ 0.2f, 1.0f, 1.0f };
 		pointLights[0].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
 
-		pointLights[1].position = float3{ 3 * sin(currentTime * 1.5f), 1.5f, 6 + 3 * cos(currentTime * 1.5f) };
-		pointLights[1].ambient = float3{ 0.25f, 0.1f, 0.5f };
-		pointLights[1].diffuse = float3{ 0.5f, 0.2f, 1.0f };
-		pointLights[1].specular = float3{ 0.5f, 0.2f, 1.0f };
-		pointLights[1].attenuationParams = float3{ 1.0f, 0.35f, 0.44f };
+		pointLights[1].position = float3{ 2 * sin(currentTime * 0.5f), 0.5f, 6 + 2 * cos(currentTime * 0.5f) };
+		pointLights[1].ambient = float3{ 0.02f, 0.02f, 0.02f };
+		pointLights[1].diffuse = float3{ 0.5f, 0.0f, 1.0f };
+		pointLights[1].specular = float3{ 0.5f, 0.0f, 1.0f };
+		pointLights[1].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
 		lightData.numPointLights = gPointLights;
 
 		for (int i = 0; i < gPointLights; ++i)
@@ -690,6 +719,10 @@ public:
 		// Update uniform buffers
 		BufferUpdateDesc viewProjCbv = { pUniformBuffers[gFrameIndex], &gUniformData };
 		updateResource(&viewProjCbv);
+
+		// Update tone mapping uniform buffers
+		BufferUpdateDesc toneBuffUpdate = { pToneMappingBuffer[gFrameIndex], &toneMappingData };
+		updateResource(&toneBuffUpdate);
 
 		// Update light uniform buffers
 		BufferUpdateDesc lightBuffUpdate = { pLightBuffer, &lightData };
@@ -1082,10 +1115,12 @@ public:
 			{
 				for (uint32_t i = 0; i < gImageCount; ++i)
 				{
-					DescriptorData params[1] = {};
+					DescriptorData params[2] = {};
 					params[0].pName = "HdrTexture";
 					params[0].ppTextures = &renderTargets.hdr[i]->pTexture;
-					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::ToneMapping]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
+					params[1].pName = "ToneMappingData";
+					params[1].ppBuffers = &pToneMappingBuffer[i];
+					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::ToneMapping]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 2, params);
 				}
 			}
 		}
