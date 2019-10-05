@@ -5,8 +5,14 @@ struct VSOutput
     float3 Color	: COLOR;
 };
 
-
-float4 main(VSOutput input) : SV_TARGET
+struct PSOut
 {
-    return float4(input.Color, 1.0f);
+    float4 color	: SV_Target0;
+};
+
+PSOut main(VSOutput input) : SV_TARGET
+{
+	PSOut output;
+    output.color = float4(input.Color, 1.0f);
+	return output;
 }

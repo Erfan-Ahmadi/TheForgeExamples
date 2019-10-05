@@ -13,6 +13,9 @@
     <Filter Include="Shaders\Vulkan">
       <UniqueIdentifier>{73c7697d-0e9d-412c-8028-db7d1dc84b6e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders\D3D12\bloom">
+      <UniqueIdentifier>{c91cb292-12b3-48b6-9bd3-4a98b7fac04b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\10_BloomHDR\BloomHDR.cpp">
@@ -43,6 +46,12 @@
     </None>
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\tonemapping.frag">
       <Filter>Shaders\D3D12</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\bloom.frag">
+      <Filter>Shaders\D3D12\bloom</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\bloom.vert">
+      <Filter>Shaders\D3D12\bloom</Filter>
     </None>
   </ItemGroup>
 </Project>

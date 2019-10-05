@@ -72,6 +72,7 @@ Cmd** ppCmds;
 struct
 {
 	RenderTarget* hdr[gImageCount];
+	RenderTarget* bright[gImageCount];
 } renderTargets;
 
 class RenderPassData
@@ -89,7 +90,8 @@ struct RenderPass
 	{
 		Forward,
 		Light,
-		ToneMapping
+		ToneMapping,
+		RENDER_PASS_COUNT
 	};
 };
 
@@ -205,7 +207,7 @@ Buffer* pInstanceColorBuffer;
 
 Buffer* pUniformBuffers[gImageCount] = { NULL };
 
-struct 
+struct
 {
 	float exposure = 1.0f;
 	float gamma = 2.2f;
@@ -249,20 +251,11 @@ public:
 		queueDesc.mFlag = QUEUE_FLAG_NONE;
 		addQueue(pRenderer, &queueDesc, &pGraphicsQueue);
 
-		// Forward Pass
-		RenderPassData* pass =
-			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)));
-		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Forward, pass));
-
-		// Light Pass
-		pass =
-			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)));
-		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Light, pass));
-
-		// ToneMapping Pass
-		pass =
-			conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)));
-		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::ToneMapping, pass));
+		for (int i = 0; i < RenderPass::RENDER_PASS_COUNT; ++i)
+		{
+			RenderPassData* pass = conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)));
+			RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>((RenderPass::Enum)(i), pass));
+		}
 
 		addCmdPool(pRenderer, pGraphicsQueue, false, &pCmdPool);
 		addCmd_n(pCmdPool, false, gImageCount, &ppCmds);
@@ -404,7 +397,7 @@ public:
 				bufferDesc.ppBuffer = &pInstanceColorBuffer;
 				addResource(&bufferDesc);
 			}
-			
+
 			// Tone Mapping
 			{
 				BufferLoadDesc bufferDesc = {};
@@ -707,8 +700,6 @@ public:
 
 		Semaphore* pRenderCompleteSemaphore = pRenderCompleteSemaphores[gFrameIndex];
 		Fence* pRenderCompleteFence = pRenderCompleteFences[gFrameIndex];
-		RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
-		RenderTarget* pHdrRenderTarget = renderTargets.hdr[gFrameIndex];
 
 		// Stall if CPU is running "Swap Chain Buffer Count" frames ahead of GPU
 		FenceStatus fenceStatus;
@@ -753,67 +744,79 @@ public:
 		loadActions.mClearDepth.depth = 1.0f;
 		loadActions.mClearDepth.stencil = 0;
 
+		RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
+		RenderTarget* pHdrRenderTarget = renderTargets.hdr[gFrameIndex];
+		RenderTarget* pBrightRenderTarget = renderTargets.bright[gFrameIndex];
+
 		Cmd* cmd = ppCmds[gFrameIndex];
 		{
 			beginCmd(cmd);
 			cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
 			{
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Render Models", true);
-
-				TextureBarrier textureBarriers[2] = {
-					{ pHdrRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
-					{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
-				};
-
-				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
-
-				cmdBindRenderTargets(
-					cmd,
-					1,
-					&pHdrRenderTarget,
-					pDepthBuffer,
-					&loadActions, NULL, NULL, -1, -1);
-
-				cmdSetViewport(
-					cmd, 0.0f, 0.0f, (float)pHdrRenderTarget->mDesc.mWidth,
-					(float)pHdrRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
-				cmdSetScissor(
-					cmd, 0, 0, pHdrRenderTarget->mDesc.mWidth,
-					pHdrRenderTarget->mDesc.mHeight);
-
-				cmdBindPipeline(cmd, RenderPasses[RenderPass::Forward]->pPipeline);
+				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Render Scene Pass", true);
 				{
-					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
-					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+					TextureBarrier textureBarriers[3] = {
+						{ pHdrRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+						{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
+					};
 
-					for (int i = 0; i < sceneData.meshes.size(); ++i)
+					cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
+
+					loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
+					loadActions.mClearColorValues[0] = pHdrRenderTarget->mDesc.mClearValue;
+					//loadActions.mLoadActionsColor[1] = LOAD_ACTION_CLEAR;
+					//loadActions.mClearColorValues[1] = pBrightRenderTarget->mDesc.mClearValue;
+
+					RenderTarget* renderTargets[2] = { pHdrRenderTarget, pBrightRenderTarget };
+
+					cmdBindRenderTargets(
+						cmd,
+						1,
+						renderTargets,
+						pDepthBuffer,
+						&loadActions, NULL, NULL, -1, -1);
+
+					cmdSetViewport(
+						cmd, 0.0f, 0.0f, (float)pHdrRenderTarget->mDesc.mWidth,
+						(float)pHdrRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+					cmdSetScissor(
+						cmd, 0, 0, pHdrRenderTarget->mDesc.mWidth,
+						pHdrRenderTarget->mDesc.mHeight);
+
+					cmdBindPipeline(cmd, RenderPasses[RenderPass::Forward]->pPipeline);
 					{
-						Buffer* pVertexBuffers[] = { sceneData.meshes[i]->pPositionStream, sceneData.meshes[i]->pNormalStream, sceneData.meshes[i]->pUVStream };
+						cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+						cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+
+						for (int i = 0; i < sceneData.meshes.size(); ++i)
+						{
+							Buffer* pVertexBuffers[] = { sceneData.meshes[i]->pPositionStream, sceneData.meshes[i]->pNormalStream, sceneData.meshes[i]->pUVStream };
+							cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
+							cmdBindIndexBuffer(cmd, sceneData.meshes[i]->pIndicesStream, 0);
+							cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
+						}
+					}
+
+					cmdBindPipeline(cmd, RenderPasses[RenderPass::Light]->pPipeline);
+					{
+						cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+						cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+
+						Buffer* pVertexBuffers[] = { sceneData.sphere->pPositionStream, pInstancePositionBuffer, pInstanceColorBuffer };
 						cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
-						cmdBindIndexBuffer(cmd, sceneData.meshes[i]->pIndicesStream, 0);
-						cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
+						cmdBindIndexBuffer(cmd, sceneData.sphere->pIndicesStream, 0);
+						cmdDrawIndexedInstanced(cmd, sceneData.sphere->mCountIndices, 0, gPointLights, 0, 0);
 					}
 				}
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Render Lights", true);
-				cmdBindPipeline(cmd, RenderPasses[RenderPass::Light]->pPipeline);
-				{
-					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
-					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
-
-					Buffer* pVertexBuffers[] = { sceneData.sphere->pPositionStream, pInstancePositionBuffer, pInstanceColorBuffer };
-					cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
-					cmdBindIndexBuffer(cmd, sceneData.sphere->pIndicesStream, 0);
-					cmdDrawIndexedInstanced(cmd, sceneData.sphere->mCountIndices, 0, gPointLights, 0, 0);
-				}
-				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
-
 				// ToneMapping
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "ToneMapping", true);
+				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Composition and ToneMapping Pass", true);
 				{
-					textureBarriers[0] = { pHdrRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE };
-					textureBarriers[1] = { pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET };
+					TextureBarrier textureBarriers[2] = {
+						{ pHdrRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
+						{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET }
+					};
 					cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
 
 					loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
@@ -839,7 +842,7 @@ public:
 					}
 				}
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
-				
+
 				loadActions = {};
 				loadActions.mLoadActionsColor[0] = LOAD_ACTION_LOAD;
 				cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
@@ -868,8 +871,8 @@ public:
 				}
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
-				textureBarriers[0] = { pSwapChainRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
-				cmdResourceBarrier(cmd, 0, NULL, 1, textureBarriers);
+				TextureBarrier textureBarrier = { pSwapChainRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
+				cmdResourceBarrier(cmd, 0, NULL, 1, &textureBarrier);
 			}
 			cmdEndGpuFrameProfile(cmd, pGpuProfiler);
 			endCmd(cmd);
@@ -932,6 +935,23 @@ public:
 			rtDesc.mFormat = TinyImageFormat_R16G16B16A16_SFLOAT;
 			for (int i = 0; i < gImageCount; ++i)
 				addRenderTarget(pRenderer, &rtDesc, &renderTargets.hdr[i]);
+		}
+
+		// Bright
+		{
+			RenderTargetDesc rtDesc = {};
+			rtDesc.mClearValue = colorClearBlack;
+			rtDesc.mArraySize = 1;
+			rtDesc.mDepth = 1;
+			rtDesc.mWidth = mSettings.mWidth;
+			rtDesc.mHeight = mSettings.mHeight;
+			rtDesc.mSampleCount = SAMPLE_COUNT_1;
+			rtDesc.mSampleQuality = 0;
+			rtDesc.pDebugName = L"Bright";
+
+			rtDesc.mFormat = TinyImageFormat_R16G16B16A16_SFLOAT;
+			for (int i = 0; i < gImageCount; ++i)
+				addRenderTarget(pRenderer, &rtDesc, &renderTargets.bright[i]);
 		}
 	}
 

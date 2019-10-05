@@ -80,6 +80,7 @@ PSOut main(VSOutput input) : SV_TARGET
 		result += calculateSpotLight(SpotLights[i], normal, viewDir, input.FragPos.xyz, input.TexCoord);
 		
     output.color = float4(result, 1.0f);
+    output.bright = float4(result, 1.0f);
 
 	return output;
 }
