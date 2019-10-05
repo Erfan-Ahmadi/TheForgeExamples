@@ -51,8 +51,6 @@ struct VSOutput
 };
 
 SamplerState	uSampler0		: register(s0);
-Texture2D		Texture			: register(t3);
-Texture2D		TextureSpecular	: register(t4);
 
 float3 calculateDirectionalLight(DirectionalLight dirLight, float3 normal, float3 viewDir, float2 TexCoord);
 float3 calculatePointLight(PointLight pointLight, float3 normal, float3 viewDir, float3 fragPosition, float2 TexCoord);
@@ -60,7 +58,7 @@ float3 calculateSpotLight(SpotLight spotLight, float3 normal, float3 viewDir, fl
 
 struct PSOut
 {
-    float4 color	: SV_Target0;
+    float4 bright	: SV_Target0;
 };
 
 PSOut main(VSOutput input) : SV_TARGET
@@ -79,8 +77,15 @@ PSOut main(VSOutput input) : SV_TARGET
 	for(int i = 0; i < numSpotLights; ++i)
 		result += calculateSpotLight(SpotLights[i], normal, viewDir, input.FragPos.xyz, input.TexCoord);
 		
-    output.color = float4(result, 1.0f);
-    output.bright = float4(result, 1.0f);
+	// TODO:
+	// 1. Texture 1D Lookup
+	// 2. Set bloom limit in a uniform
+	float luminance = dot(result, float3(0.2126, 0.7152, 0.0722));
+
+	if(luminance > 1.0f)
+		output.bright = float4(result, 1.0f);
+    else
+        output.bright = float4(0.0, 0.0, 0.0, 1.0);
 
 	return output;
 }
@@ -101,8 +106,7 @@ float3 calculateDirectionalLight(DirectionalLight dirLight, float3 normal, float
 	float spec = pow(max(dot(reflectDir, viewDir), 0.0), 32);
 	float3 specular = spec * dirLight.specular;  
 
-	return (ambient + diffuse) * Texture.Sample(uSampler0, TexCoord).xyz +
-		(specular) * TextureSpecular.Sample(uSampler0, TexCoord).xyz;
+	return (ambient + diffuse) + (specular);
 }
 
 float3 calculatePointLight(PointLight pointLight, float3 normal, float3 viewDir, float3 fragPosition, float2 TexCoord)
@@ -129,8 +133,7 @@ float3 calculatePointLight(PointLight pointLight, float3 normal, float3 viewDir,
 	float spec = pow(max(dot(reflectDir, viewDir), 0.0), 64);
 	float3 specular = spec * pointLight.specular;  
 
-	return attenuation * ((ambient + diffuse) * Texture.Sample(uSampler0, TexCoord).xyz +
-			(specular) * TextureSpecular.Sample(uSampler0, TexCoord).xyz);
+	return attenuation * ((ambient + diffuse) + (specular));
 }
 
 float3 calculateSpotLight(SpotLight spotLight, float3 normal, float3 viewDir, float3 fragPosition, float2 TexCoord)
@@ -160,6 +163,5 @@ float3 calculateSpotLight(SpotLight spotLight, float3 normal, float3 viewDir, fl
 	float spec = pow(max(dot(halfwayDir, normal), 0.0), 64);
 	float3 specular = spec * spotLight.specular * intensity;  
 
-	return attenuation * ((ambient + diffuse) * Texture.Sample(uSampler0, TexCoord).xyz +
-			(specular) * TextureSpecular.Sample(uSampler0, TexCoord).xyz);
+	return attenuation * ((ambient + diffuse) + (specular));
 }

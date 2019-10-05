@@ -44,9 +44,9 @@ cbuffer LightData : register(b1, UPDATE_FREQ_PER_FRAME)
 
 struct VSOutput 
 {
+	float4 Position		: SV_POSITION;
 	float4 Normal		: NORMAL;
 	float4 FragPos		: POSITION;
-	float4 Position		: SV_POSITION;
     float2 TexCoord		: TEXCOORD;
 };
 

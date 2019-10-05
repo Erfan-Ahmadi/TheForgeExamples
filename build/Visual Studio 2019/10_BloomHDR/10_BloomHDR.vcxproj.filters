@@ -53,5 +53,11 @@
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\bloom.vert">
       <Filter>Shaders\D3D12\bloom</Filter>
     </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlur.vert">
+      <Filter>Shaders\D3D12\bloom</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlur.frag">
+      <Filter>Shaders\D3D12\bloom</Filter>
+    </None>
   </ItemGroup>
 </Project>

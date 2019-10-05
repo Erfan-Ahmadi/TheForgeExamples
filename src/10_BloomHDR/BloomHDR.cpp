@@ -23,6 +23,9 @@ constexpr size_t gSpotLights = 1;
 constexpr size_t gMaxSpotLights = 8;
 static_assert(gSpotLights <= gMaxSpotLights, "");
 
+// should be in sync with shader definitions
+constexpr size_t bloom_dim = 256;
+
 const uint32_t	gImageCount = 3;
 
 Renderer* pRenderer = NULL;
@@ -49,6 +52,7 @@ ICameraController* pCameraController = NULL;
 TextDrawDesc gFrameTimeDraw = TextDrawDesc(0, 0xff00ffff, 18);
 
 RenderTarget* pDepthBuffer;
+RenderTarget* pBloomDepthStencilBuffer;
 
 RasterizerState* pRasterDefault = NULL;
 DepthState* pDepthDefault = NULL;
@@ -73,6 +77,7 @@ struct
 {
 	RenderTarget* hdr[gImageCount];
 	RenderTarget* bright[gImageCount];
+	RenderTarget* blurred[gImageCount];
 } renderTargets;
 
 class RenderPassData
@@ -90,6 +95,8 @@ struct RenderPass
 	{
 		Forward,
 		Light,
+		BloomDownres,
+		Blur,
 		ToneMapping,
 		RENDER_PASS_COUNT
 	};
@@ -211,6 +218,7 @@ struct
 {
 	float exposure = 1.0f;
 	float gamma = 2.2f;
+	float bloomLevel = 1.0f;
 	bool tonemap = false;
 } toneMappingData;
 
@@ -229,6 +237,8 @@ const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Middleware_3/Text/",									// FSR_MIDDLEWARE_TEXT
 	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
+
+bool gPauseLights = false;
 
 class BloomHDR : public IApp
 {
@@ -275,9 +285,19 @@ public:
 		shaderDesc.mStages[0] = { "basic.vert", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[1] = { "basic.frag", NULL, 0, FSR_SrcShaders };
 		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Forward]->pShader);
+
 		shaderDesc.mStages[0] = { "light.vert", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[1] = { "light.frag", NULL, 0, FSR_SrcShaders };
 		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Light]->pShader);
+
+		shaderDesc.mStages[0] = { "bloom/bloom.vert", NULL, 0, FSR_SrcShaders };
+		shaderDesc.mStages[1] = { "bloom/bloom.frag", NULL, 0, FSR_SrcShaders };
+		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::BloomDownres]->pShader);
+
+		shaderDesc.mStages[0] = { "bloom/gaussianBlur.vert", NULL, 0, FSR_SrcShaders };
+		shaderDesc.mStages[1] = { "bloom/gaussianBlur.frag", NULL, 0, FSR_SrcShaders };
+		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Blur]->pShader);
+
 		shaderDesc.mStages[0] = { "tonemapping.vert", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[1] = { "tonemapping.frag", NULL, 0, FSR_SrcShaders };
 		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::ToneMapping]->pShader);
@@ -306,21 +326,23 @@ public:
 		// Static Samplers
 		SamplerDesc samplerDesc = { FILTER_LINEAR,
 									FILTER_LINEAR,
-									MIPMAP_MODE_NEAREST,
+									MIPMAP_MODE_LINEAR,
 									ADDRESS_MODE_CLAMP_TO_EDGE,
 									ADDRESS_MODE_CLAMP_TO_EDGE,
-									ADDRESS_MODE_CLAMP_TO_EDGE };
+									ADDRESS_MODE_CLAMP_TO_EDGE,
+									0,
+									0};
 		addSampler(pRenderer, &samplerDesc, &pSampler);
 
 		// Resource Binding
 		const char* samplerNames = { "uSampler0 " };
-
 		{
 			// RenderPass::Forward
 			{
+				Shader* shaders[2] = { RenderPasses[RenderPass::Forward]->pShader, RenderPasses[RenderPass::BloomDownres]->pShader };
 				RootSignatureDesc rootDesc = {};
-				rootDesc.mShaderCount = 1;
-				rootDesc.ppShaders = &RenderPasses[RenderPass::Forward]->pShader;
+				rootDesc.mShaderCount = 2;
+				rootDesc.ppShaders = shaders;
 				rootDesc.mStaticSamplerCount = 1;
 				rootDesc.ppStaticSamplerNames = &samplerNames;
 				rootDesc.ppStaticSamplers = &pSampler;
@@ -345,6 +367,22 @@ public:
 				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
 			}
 
+			// RenderPass::Blur
+			{
+				RootSignatureDesc rootDesc = {};
+				rootDesc.mShaderCount = 1;
+				rootDesc.ppShaders = &RenderPasses[RenderPass::Blur]->pShader;
+				rootDesc.mStaticSamplerCount = 1;
+				rootDesc.ppStaticSamplerNames = &samplerNames;
+				rootDesc.ppStaticSamplers = &pSampler;
+				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Blur]->pRootSignature);
+
+				DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Blur]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
+				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Blur]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+				setDesc = { RenderPasses[RenderPass::Blur]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
+				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Blur]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+			}
+			
 			// RenderPass::ToneMapping
 			{
 				RootSignatureDesc rootDesc = {};
@@ -442,7 +480,9 @@ public:
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &gMicroProfiler));
 		pGui->AddWidget(CheckboxWidget("ToneMapping", &toneMappingData.tonemap));
 		pGui->AddWidget(SliderFloatWidget("Exposure", &toneMappingData.exposure, 0.1f, 10.0f, 0.25f, "%.2f"));
-		pGui->AddWidget(SliderFloatWidget("Gamma", &toneMappingData.gamma, 1.5f, 3.0f, 0.7f, "%.2f"));
+		pGui->AddWidget(SliderFloatWidget("Gamma", &toneMappingData.gamma, 1.0f, 3.0f, 0.6f, "%.2f"));
+		pGui->AddWidget(SliderFloatWidget("Bloom Level", &toneMappingData.bloomLevel, 0.0f, 1.0f, 0.05f, "%.2f"));
+		pGui->AddWidget(CheckboxWidget("Pause Lights", &gPauseLights));
 
 		// Camera
 		CameraMotionParameters cmp{ 40.0f, 30.0f, 100.0f };
@@ -530,7 +570,8 @@ public:
 
 			removeShader(pRenderer, pass->pShader);
 
-			removeRootSignature(pRenderer, pass->pRootSignature);
+			if (pass->pRootSignature)
+				removeRootSignature(pRenderer, pass->pRootSignature);
 
 			pass->~RenderPassData();
 			conf_free(pass);
@@ -613,8 +654,13 @@ public:
 
 		for (int i = 0; i < gImageCount; ++i)
 			removeRenderTarget(pRenderer, renderTargets.hdr[i]);
+		for (int i = 0; i < gImageCount; ++i)
+			removeRenderTarget(pRenderer, renderTargets.bright[i]);
+		for (int i = 0; i < gImageCount; ++i)
+			removeRenderTarget(pRenderer, renderTargets.blurred[i]);
 
 		removeRenderTarget(pRenderer, pDepthBuffer);
+		removeRenderTarget(pRenderer, pBloomDepthStencilBuffer);
 		removeSwapChain(pRenderer, pSwapChain);
 		pDepthBuffer = NULL;
 		pSwapChain = NULL;
@@ -627,6 +673,10 @@ public:
 
 		static float currentTime;
 		currentTime += deltaTime;
+
+		static float currentLightTime;
+		if (!gPauseLights)
+			currentLightTime += deltaTime;
 
 		// update camera with time
 		mat4 viewMat = pCameraController->getViewMatrix();
@@ -651,16 +701,16 @@ public:
 		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };
 		lightData.numDirectionalLights = 0;
 
-		pointLights[0].position = float3{ 1 * sin(currentTime * 0.5f), 1.0f, 6 + 1.0f * cos(currentTime * 0.5f) };
+		pointLights[0].position = float3{ 0.0f + 4 * abs(cos(2 * currentLightTime)), 1.0f, 4.0f };
 		pointLights[0].ambient = float3{ 0.02f, 0.02f, 0.02f };
-		pointLights[0].diffuse = float3{ 0.2f, 1.0f, 1.0f };
-		pointLights[0].specular = float3{ 0.2f, 1.0f, 1.0f };
+		pointLights[0].diffuse = float3{ 1.0f, 2.0f, 2.0f };
+		pointLights[0].specular = float3{ 1.0f, 3.0f, 3.0f };
 		pointLights[0].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
 
-		pointLights[1].position = float3{ 2 * sin(currentTime * 0.5f), 0.5f, 6 + 2 * cos(currentTime * 0.5f) };
+		pointLights[1].position = float3{ 0.0f - 4 * abs(cos(2 * currentLightTime)), 1.0f, 4.0f };
 		pointLights[1].ambient = float3{ 0.02f, 0.02f, 0.02f };
-		pointLights[1].diffuse = float3{ 0.5f, 0.0f, 1.0f };
-		pointLights[1].specular = float3{ 0.5f, 0.0f, 1.0f };
+		pointLights[1].diffuse = float3{ 1.0f, 0.0f, 2.0f };
+		pointLights[1].specular = float3{ 1.0f, 0.0f, 2.0f };
 		pointLights[1].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
 		lightData.numPointLights = gPointLights;
 
@@ -747,6 +797,7 @@ public:
 		RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
 		RenderTarget* pHdrRenderTarget = renderTargets.hdr[gFrameIndex];
 		RenderTarget* pBrightRenderTarget = renderTargets.bright[gFrameIndex];
+		RenderTarget* pBlurRenderTarget = renderTargets.blurred[gFrameIndex];
 
 		Cmd* cmd = ppCmds[gFrameIndex];
 		{
@@ -755,7 +806,7 @@ public:
 			{
 				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Render Scene Pass", true);
 				{
-					TextureBarrier textureBarriers[3] = {
+					TextureBarrier textureBarriers[2] = {
 						{ pHdrRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
 						{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
 					};
@@ -764,15 +815,11 @@ public:
 
 					loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
 					loadActions.mClearColorValues[0] = pHdrRenderTarget->mDesc.mClearValue;
-					//loadActions.mLoadActionsColor[1] = LOAD_ACTION_CLEAR;
-					//loadActions.mClearColorValues[1] = pBrightRenderTarget->mDesc.mClearValue;
-
-					RenderTarget* renderTargets[2] = { pHdrRenderTarget, pBrightRenderTarget };
 
 					cmdBindRenderTargets(
 						cmd,
 						1,
-						renderTargets,
+						&pHdrRenderTarget,
 						pDepthBuffer,
 						&loadActions, NULL, NULL, -1, -1);
 
@@ -810,16 +857,96 @@ public:
 				}
 				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
-				// ToneMapping
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Composition and ToneMapping Pass", true);
+				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Bloom Pass", true);
 				{
 					TextureBarrier textureBarriers[2] = {
-						{ pHdrRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
-						{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET }
+						{ pBrightRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+						{ pBloomDepthStencilBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
+					};
+					cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
+
+					loadActions.mLoadActionDepth = LOAD_ACTION_CLEAR;
+					loadActions.mClearDepth.depth = 1.0f;
+					loadActions.mLoadActionStencil = LOAD_ACTION_CLEAR;
+					loadActions.mClearDepth.stencil = 0;
+					loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
+					loadActions.mClearColorValues[0] = pBrightRenderTarget->mDesc.mClearValue;
+
+					cmdBindRenderTargets(
+						cmd,
+						1,
+						&pBrightRenderTarget,
+						pBloomDepthStencilBuffer,
+						&loadActions, NULL, NULL, -1, -1);
+
+					cmdSetViewport(
+						cmd, 0.0f, 0.0f, (float)pBrightRenderTarget->mDesc.mWidth,
+						(float)pBrightRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+
+					cmdSetScissor(
+						cmd, 0, 0, pBrightRenderTarget->mDesc.mWidth,
+						pBrightRenderTarget->mDesc.mHeight);
+
+					cmdBindPipeline(cmd, RenderPasses[RenderPass::BloomDownres]->pPipeline);
+					{
+						cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+						cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+
+						for (int i = 0; i < sceneData.meshes.size(); ++i)
+						{
+							Buffer* pVertexBuffers[] = { sceneData.meshes[i]->pPositionStream, sceneData.meshes[i]->pNormalStream, sceneData.meshes[i]->pUVStream };
+							cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
+							cmdBindIndexBuffer(cmd, sceneData.meshes[i]->pIndicesStream, 0);
+							cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
+						}
+					}
+				}
+				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
+				
+				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Blur Pass", true);
+				{
+					TextureBarrier textureBarriers[2] = {
+						{ pBloomDepthStencilBuffer->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
+						{ pBlurRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET }
 					};
 					cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
 
 					loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
+					loadActions.mLoadActionStencil = LOAD_ACTION_DONTCARE;
+					cmdBindRenderTargets(
+						cmd,
+						1,
+						&pBlurRenderTarget,
+						NULL,
+						&loadActions, NULL, NULL, -1, -1);
+
+					cmdSetViewport(
+						cmd, 0.0f, 0.0f, (float)pBlurRenderTarget->mDesc.mWidth,
+						(float)pBlurRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+					cmdSetScissor(
+						cmd, 0, 0, pBlurRenderTarget->mDesc.mWidth,
+						pBlurRenderTarget->mDesc.mHeight);
+
+					cmdBindPipeline(cmd, RenderPasses[RenderPass::Blur]->pPipeline);
+					{
+						cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Blur]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+						cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Blur]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+						cmdDraw(cmd, 3, 0);
+					}
+				}
+				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
+
+				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Composition and ToneMapping Pass", true);
+				{
+					TextureBarrier textureBarriers[3] = {
+						{ pHdrRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
+						{ pBlurRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
+						{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET }
+					};
+					cmdResourceBarrier(cmd, 0, nullptr, 3, textureBarriers);
+
+					loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
+					loadActions.mLoadActionStencil = LOAD_ACTION_DONTCARE;
 					cmdBindRenderTargets(
 						cmd,
 						1,
@@ -905,21 +1032,6 @@ public:
 	{
 		ClearValue colorClearBlack = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-		// Depth Buffer
-		{
-			RenderTargetDesc rtDesc = {};
-			rtDesc.mArraySize = 1;
-			rtDesc.mClearValue.depth = 1.0f;
-			rtDesc.mClearValue.stencil = 0.0f;
-			rtDesc.mFormat = TinyImageFormat_D32_SFLOAT;
-			rtDesc.mDepth = 1;
-			rtDesc.mWidth = mSettings.mWidth;
-			rtDesc.mHeight = mSettings.mHeight;
-			rtDesc.mSampleCount = SAMPLE_COUNT_1;
-			rtDesc.mSampleQuality = 0;
-			addRenderTarget(pRenderer, &rtDesc, &pDepthBuffer);
-		}
-
 		// HDR
 		{
 			RenderTargetDesc rtDesc = {};
@@ -943,8 +1055,8 @@ public:
 			rtDesc.mClearValue = colorClearBlack;
 			rtDesc.mArraySize = 1;
 			rtDesc.mDepth = 1;
-			rtDesc.mWidth = mSettings.mWidth;
-			rtDesc.mHeight = mSettings.mHeight;
+			rtDesc.mWidth = bloom_dim;
+			rtDesc.mHeight = bloom_dim;
 			rtDesc.mSampleCount = SAMPLE_COUNT_1;
 			rtDesc.mSampleQuality = 0;
 			rtDesc.pDebugName = L"Bright";
@@ -952,6 +1064,53 @@ public:
 			rtDesc.mFormat = TinyImageFormat_R16G16B16A16_SFLOAT;
 			for (int i = 0; i < gImageCount; ++i)
 				addRenderTarget(pRenderer, &rtDesc, &renderTargets.bright[i]);
+		}
+		
+		// Blur
+		{
+			RenderTargetDesc rtDesc = {};
+			rtDesc.mClearValue = colorClearBlack;
+			rtDesc.mArraySize = 1;
+			rtDesc.mDepth = 1;
+			rtDesc.mWidth = bloom_dim;
+			rtDesc.mHeight = bloom_dim;
+			rtDesc.mSampleCount = SAMPLE_COUNT_1;
+			rtDesc.mSampleQuality = 0;
+			rtDesc.pDebugName = L"Blurr";
+
+			rtDesc.mFormat = TinyImageFormat_R16G16B16A16_SFLOAT;
+			for (int i = 0; i < gImageCount; ++i)
+				addRenderTarget(pRenderer, &rtDesc, &renderTargets.blurred[i]);
+		}
+
+		// Depth Buffer
+		{
+			RenderTargetDesc rtDesc = {};
+			rtDesc.mArraySize = 1;
+			rtDesc.mClearValue.depth = 1.0f;
+			rtDesc.mClearValue.stencil = 0.0f;
+			rtDesc.mFormat = TinyImageFormat_D32_SFLOAT;
+			rtDesc.mDepth = 1;
+			rtDesc.mWidth = mSettings.mWidth;
+			rtDesc.mHeight = mSettings.mHeight;
+			rtDesc.mSampleCount = SAMPLE_COUNT_1;
+			rtDesc.mSampleQuality = 0;
+			addRenderTarget(pRenderer, &rtDesc, &pDepthBuffer);
+		}
+
+		// Bloom DepthStencil Buffer
+		{
+			RenderTargetDesc rtDesc = {};
+			rtDesc.mArraySize = 1;
+			rtDesc.mClearValue.depth = 1.0f;
+			rtDesc.mClearValue.stencil = 0.0f;
+			rtDesc.mFormat = TinyImageFormat_D24_UNORM_S8_UINT;
+			rtDesc.mDepth = 1;
+			rtDesc.mWidth = bloom_dim;
+			rtDesc.mHeight = bloom_dim;
+			rtDesc.mSampleCount = SAMPLE_COUNT_1;
+			rtDesc.mSampleQuality = 0;
+			addRenderTarget(pRenderer, &rtDesc, &pBloomDepthStencilBuffer);
 		}
 	}
 
@@ -1041,6 +1200,67 @@ public:
 			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Light]->pPipeline);
 		}
 
+		// Bloom Forward
+		{
+			VertexLayout vertexLayout = {};
+			vertexLayout.mAttribCount = 3;
+
+			vertexLayout.mAttribs[0].mSemantic = SEMANTIC_POSITION;
+			vertexLayout.mAttribs[0].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
+			vertexLayout.mAttribs[0].mBinding = 0;
+			vertexLayout.mAttribs[0].mLocation = 0;
+			vertexLayout.mAttribs[0].mOffset = 0;
+
+			vertexLayout.mAttribs[1].mSemantic = SEMANTIC_NORMAL;
+			vertexLayout.mAttribs[1].mFormat = TinyImageFormat_R32G32B32_SFLOAT;
+			vertexLayout.mAttribs[1].mBinding = 1;
+			vertexLayout.mAttribs[1].mLocation = 1;
+			vertexLayout.mAttribs[1].mOffset = 0;
+
+			vertexLayout.mAttribs[2].mSemantic = SEMANTIC_TEXCOORD0;
+			vertexLayout.mAttribs[2].mFormat = TinyImageFormat_R32G32_SFLOAT;
+			vertexLayout.mAttribs[2].mBinding = 2;
+			vertexLayout.mAttribs[2].mLocation = 2;
+			vertexLayout.mAttribs[2].mOffset = 0;
+
+			PipelineDesc desc = {};
+			desc.mType = PIPELINE_TYPE_GRAPHICS;
+			GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
+			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
+			pipelineSettings.mRenderTargetCount = 1;
+			pipelineSettings.pDepthState = pDepthDefault;
+			pipelineSettings.pColorFormats = &renderTargets.bright[0]->mDesc.mFormat;
+			pipelineSettings.mSampleCount = renderTargets.bright[0]->mDesc.mSampleCount;
+			pipelineSettings.mSampleQuality = renderTargets.bright[0]->mDesc.mSampleQuality;
+			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
+			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Forward]->pRootSignature;
+			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::BloomDownres]->pShader;
+			pipelineSettings.pVertexLayout = &vertexLayout;
+			pipelineSettings.pRasterizerState = pRasterDefault;
+
+			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::BloomDownres]->pPipeline);
+		}
+		
+		// ToneMapping
+		{
+			PipelineDesc desc = {};
+			desc.mType = PIPELINE_TYPE_GRAPHICS;
+			GraphicsPipelineDesc& pipelineSettings = desc.mGraphicsDesc;
+			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
+			pipelineSettings.mRenderTargetCount = 1;
+			pipelineSettings.pDepthState = pDepthNone;
+			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
+			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
+			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
+			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
+			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Blur]->pRootSignature;
+			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::Blur]->pShader;
+			pipelineSettings.pVertexLayout = NULL;
+			pipelineSettings.pRasterizerState = pRasterDefault;
+
+			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::Blur]->pPipeline);
+		}
+
 		// ToneMapping
 		{
 			PipelineDesc desc = {};
@@ -1128,6 +1348,22 @@ public:
 				}
 			}
 		}
+		
+		// RenderPass::Blur
+		{
+			// DESCRIPTOR_UPDATE_FREQ_PER_FRAME
+			{
+				for (uint32_t i = 0; i < gImageCount; ++i)
+				{
+					DescriptorData params[2] = {};
+					params[0].pName = "Texture";
+					params[0].ppTextures = &renderTargets.bright[i]->pTexture;
+					//params[2].pName = "ToneMappingData";
+					//params[2].ppBuffers = &pToneMappingBuffer[i];
+					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Blur]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
+				}
+			}
+		}
 
 		// RenderPass::ToneMapping
 		{
@@ -1135,12 +1371,14 @@ public:
 			{
 				for (uint32_t i = 0; i < gImageCount; ++i)
 				{
-					DescriptorData params[2] = {};
+					DescriptorData params[3] = {};
 					params[0].pName = "HdrTexture";
 					params[0].ppTextures = &renderTargets.hdr[i]->pTexture;
-					params[1].pName = "ToneMappingData";
-					params[1].ppBuffers = &pToneMappingBuffer[i];
-					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::ToneMapping]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 2, params);
+					params[1].pName = "BloomTexture";
+					params[1].ppTextures = &renderTargets.blurred[i]->pTexture;
+					params[2].pName = "ToneMappingData";
+					params[2].ppBuffers = &pToneMappingBuffer[i];
+					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::ToneMapping]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 3, params);
 				}
 			}
 		}
