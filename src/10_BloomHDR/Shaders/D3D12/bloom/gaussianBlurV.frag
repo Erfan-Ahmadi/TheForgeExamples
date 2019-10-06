@@ -1,5 +1,3 @@
-#define TEX_DIM 256
-
 struct VSOutput 
 {
 	float4 Position	: SV_POSITION;
@@ -20,7 +18,9 @@ float4 main(VSOutput input) : SV_TARGET
 	weight[3] = 0.054054;
 	weight[4] = 0.016216;
 	
-	float2 tex_offset = 1.0f / TEX_DIM;
+	uint w, h;
+	Texture.GetDimensions(w, h);
+	float2 tex_offset = 1.0f / h;
 	float3 result = Texture.Sample(uSampler0, input.UV).rgb * weight[0];
 
 	for(int i = 0; i < 5; ++i)

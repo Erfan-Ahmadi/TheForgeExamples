@@ -83,7 +83,7 @@ PSOut main(VSOutput input) : SV_TARGET
 	float luminance = dot(result, float3(0.2126, 0.7152, 0.0722));
 
 	if(luminance > 1.0f)
-		output.bright = float4(result, 1.0f);
+		output.bright = float4(result, 2.0f);
     else
         output.bright = float4(0.0, 0.0, 0.0, 1.0);
 

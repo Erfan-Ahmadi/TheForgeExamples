@@ -20,13 +20,15 @@ float4 main(VSOutput input) : SV_TARGET
 	weight[3] = 0.054054;
 	weight[4] = 0.016216;
 	
-	float2 tex_offset = 1.0f / TEX_DIM;
+	uint w, h;
+	Texture.GetDimensions(w, h);
+	float2 tex_offset = 1.0f / w;
 	float3 result = Texture.Sample(uSampler0, input.UV).rgb * weight[0];
 
 	for(int i = 0; i < 5; ++i)
 	{
-		result += Texture.Sample(uSampler0, input.UV + float2(0.0f, tex_offset.y * i)).rgb * weight[i] * 1.5f;
-		result += Texture.Sample(uSampler0, input.UV - float2(0.0f, tex_offset.y * i)).rgb * weight[i] * 1.5f;
+		result += Texture.Sample(uSampler0, input.UV + float2(tex_offset.x * i, 0.0f)).rgb * weight[i] * 1.5f;
+		result += Texture.Sample(uSampler0, input.UV - float2(tex_offset.x * i, 0.0f)).rgb * weight[i] * 1.5f;
 	}
 	
 	return float4(result, 1.0);

@@ -1,5 +1,3 @@
-#define TEX_DIM 256
-
 struct VSOutput 
 {
 	float4 Position	: SV_POSITION;
@@ -19,29 +17,13 @@ cbuffer ToneMappingData : register(b0, UPDATE_FREQ_PER_FRAME)
 };
 
 float4 main(VSOutput input) : SV_TARGET
-{    
-	//return BloomTexture.Sample(uSampler0, input.UV);
-
-	// Vertical Blur
-	float weight[5];
-	weight[0] = 0.227027;
-	weight[1] = 0.1945946;
-	weight[2] = 0.1216216;
-	weight[3] = 0.054054;
-	weight[4] = 0.016216;
-	
-	float2 tex_offset = 1.0f / TEX_DIM;
-	float3 hblur = BloomTexture.Sample(uSampler0, input.UV).rgb * weight[0];
-
-	for(int i = 0; i < 5; ++i)
-	{
-		hblur += BloomTexture.Sample(uSampler0, input.UV + float2(tex_offset.x * i, 0.0)).rgb * weight[i] * 1.5f;
-		hblur += BloomTexture.Sample(uSampler0, input.UV - float2(tex_offset.x * i, 0.0)).rgb * weight[i] * 1.5f;
-	}
+{  
+	float3 bloom = BloomTexture.Sample(uSampler0, input.UV).rgb;
+	//return float4(bloom, 1.0f);
 
 	const float gamma = inGamma;
   
-	float4 hdrColor = HdrTexture.Sample(uSampler0, input.UV) + bloomLevel * float4(hblur, 1.0f);
+	float4 hdrColor = HdrTexture.Sample(uSampler0, input.UV) + bloomLevel * float4(bloom, 1.0f);
 	float3 mapped;
 
 	if(tonemap)
