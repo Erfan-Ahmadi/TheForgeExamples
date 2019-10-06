@@ -20,7 +20,7 @@ cbuffer ToneMappingData : register(b0, UPDATE_FREQ_PER_FRAME)
 
 float4 main(VSOutput input) : SV_TARGET
 {    
-	return BloomTexture.Sample(uSampler0, input.UV);
+	//return BloomTexture.Sample(uSampler0, input.UV);
 
 	// Vertical Blur
 	float weight[5];
