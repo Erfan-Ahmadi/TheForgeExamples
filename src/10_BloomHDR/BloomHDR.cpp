@@ -39,7 +39,7 @@ Sampler* pSamplerLinear;
 
 SwapChain* pSwapChain = NULL;
 
-uint32_t			gFrameIndex = 0;
+uint32_t		gFrameIndex = 0;
 
 bool           gMicroProfiler = false;
 bool           bPrevToggleMicroProfiler = false;
@@ -558,6 +558,8 @@ public:
 
 		// Exit profile
 		exitProfiler();
+		
+		removeGpuProfiler(pRenderer, pGpuProfiler);
 
 		removeSampler(pRenderer, pSamplerLinear);
 
@@ -569,7 +571,8 @@ public:
 
 		removeResource(pInstancePositionBuffer);
 		removeResource(pInstanceColorBuffer);
-
+		
+		removeResource(pLightBuffer);
 		removeResource(lightBuffers.pDirLightsBuffer);
 		removeResource(lightBuffers.pPointLightsBuffer);
 		removeResource(lightBuffers.pSpotLightsBuffer);
