@@ -32,7 +32,7 @@ Queue* pGraphicsQueue = NULL;
 Fence* pRenderCompleteFences[gImageCount] = { NULL };
 Semaphore* pRenderCompleteSemaphores[gImageCount] = { NULL };
 Semaphore* pImageAquiredSemaphore = NULL;
-Sampler* pSampler;
+Sampler* pSamplerLinear;
 
 SwapChain* pSwapChain = NULL;
 
@@ -276,24 +276,26 @@ public:
 		// Static Samplers
 		SamplerDesc samplerDesc = { FILTER_LINEAR,
 									FILTER_LINEAR,
-									MIPMAP_MODE_NEAREST,
+									MIPMAP_MODE_LINEAR,
 									ADDRESS_MODE_CLAMP_TO_EDGE,
 									ADDRESS_MODE_CLAMP_TO_EDGE,
 									ADDRESS_MODE_CLAMP_TO_EDGE };
-		addSampler(pRenderer, &samplerDesc, &pSampler);
+		addSampler(pRenderer, &samplerDesc, &pSamplerLinear);
 
 		// Resource Binding
-		const char* samplerNames = { "uSampler0 " };
+		const char* pStaticSamplerNames[] = { "uSampler0" };
+		Sampler*    pStaticSamplers[] = { pSamplerLinear };
+		uint        numStaticSamplers = 1;
 
 		{
 			// Root Signature for Forward Pipeline
 			{
 				RootSignatureDesc rootDesc = {};
-				rootDesc.mShaderCount = 1;
 				rootDesc.ppShaders = &RenderPasses[RenderPass::Forward]->pShader;
-				rootDesc.mStaticSamplerCount = 1;
-				rootDesc.ppStaticSamplerNames = &samplerNames;
-				rootDesc.ppStaticSamplers = &pSampler;
+				rootDesc.mShaderCount = 1;
+				rootDesc.mStaticSamplerCount = numStaticSamplers;
+				rootDesc.ppStaticSamplerNames = pStaticSamplerNames;
+				rootDesc.ppStaticSamplers = pStaticSamplers;
 				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Forward]->pRootSignature);
 
 				DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Forward]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
@@ -414,6 +416,8 @@ public:
 
 		// Exit profile
 		exitProfiler();
+
+		removeSampler(pRenderer, pSamplerLinear);
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{

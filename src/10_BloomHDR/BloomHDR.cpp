@@ -35,7 +35,7 @@ Queue* pGraphicsQueue = NULL;
 Fence* pRenderCompleteFences[gImageCount] = { NULL };
 Semaphore* pRenderCompleteSemaphores[gImageCount] = { NULL };
 Semaphore* pImageAquiredSemaphore = NULL;
-Sampler* pSampler;
+Sampler* pSamplerLinear;
 
 SwapChain* pSwapChain = NULL;
 
@@ -336,10 +336,13 @@ public:
 									ADDRESS_MODE_CLAMP_TO_EDGE,
 									0,
 									0 };
-		addSampler(pRenderer, &samplerDesc, &pSampler);
+		addSampler(pRenderer, &samplerDesc, &pSamplerLinear);
 
 		// Resource Binding
-		const char* samplerNames = { "uSampler0 " };
+		const char* pStaticSamplerNames[] = { "uSampler0" };
+		Sampler* pStaticSamplers[] = { pSamplerLinear };
+		uint        numStaticSamplers = 1;
+
 		{
 			// RenderPass::Forward
 			{
@@ -347,9 +350,9 @@ public:
 				RootSignatureDesc rootDesc = {};
 				rootDesc.mShaderCount = 1;
 				rootDesc.ppShaders = shaders;
-				rootDesc.mStaticSamplerCount = 1;
-				rootDesc.ppStaticSamplerNames = &samplerNames;
-				rootDesc.ppStaticSamplers = &pSampler;
+				rootDesc.mStaticSamplerCount = numStaticSamplers;
+				rootDesc.ppStaticSamplerNames = pStaticSamplerNames;
+				rootDesc.ppStaticSamplers = pStaticSamplers;
 				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Forward]->pRootSignature);
 
 				DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Forward]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
@@ -376,9 +379,9 @@ public:
 				RootSignatureDesc rootDesc = {};
 				rootDesc.mShaderCount = 1;
 				rootDesc.ppShaders = &RenderPasses[RenderPass::Blur]->pShader;
-				rootDesc.mStaticSamplerCount = 1;
-				rootDesc.ppStaticSamplerNames = &samplerNames;
-				rootDesc.ppStaticSamplers = &pSampler;
+				rootDesc.mStaticSamplerCount = numStaticSamplers;
+				rootDesc.ppStaticSamplerNames = pStaticSamplerNames;
+				rootDesc.ppStaticSamplers = pStaticSamplers;
 				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Blur]->pRootSignature);
 
 				DescriptorSetDesc setDesc = { RenderPasses[RenderPass::Blur]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
@@ -393,8 +396,9 @@ public:
 				rootDesc.mShaderCount = 1;
 				rootDesc.ppShaders = &RenderPasses[RenderPass::ToneMapping]->pShader;
 				rootDesc.mStaticSamplerCount = 1;
-				rootDesc.ppStaticSamplerNames = &samplerNames;
-				rootDesc.ppStaticSamplers = &pSampler;
+				rootDesc.mStaticSamplerCount = numStaticSamplers;
+				rootDesc.ppStaticSamplerNames = pStaticSamplerNames;
+				rootDesc.ppStaticSamplers = pStaticSamplers;
 				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::ToneMapping]->pRootSignature);
 
 				DescriptorSetDesc setDesc = { RenderPasses[RenderPass::ToneMapping]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_NONE, 1 };
@@ -554,6 +558,8 @@ public:
 
 		// Exit profile
 		exitProfiler();
+
+		removeSampler(pRenderer, pSamplerLinear);
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
@@ -974,8 +980,14 @@ public:
 				};
 				cmdResourceBarrier(cmd, 0, nullptr, 3, textureBarriers);
 
+				loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
+				loadActions.mClearColorValues[0].r = 0.0f;
+				loadActions.mClearColorValues[0].g = 0.0f;
+				loadActions.mClearColorValues[0].b = 0.0f;
+				loadActions.mClearColorValues[0].a = 0.0f;
 				loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
 				loadActions.mLoadActionStencil = LOAD_ACTION_DONTCARE;
+
 				cmdBindRenderTargets(
 					cmd,
 					1,
@@ -1003,34 +1015,32 @@ public:
 			loadActions.mLoadActionsColor[0] = LOAD_ACTION_LOAD;
 			cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
 			cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw UI", true);
-			{
-				static HiresTimer gTimer;
-				gTimer.GetUSec(true);
+			static HiresTimer gTimer;
+			gTimer.GetUSec(true);
 
-				gVirtualJoystick.Draw(cmd, { 1.0f, 1.0f, 1.0f, 1.0f });
+			gVirtualJoystick.Draw(cmd, { 1.0f, 1.0f, 1.0f, 1.0f });
 
-				gAppUI.DrawText(cmd, float2(8, 15), eastl::string().sprintf("CPU %f ms", gTimer.GetUSecAverage() / 1000.0f).c_str(), &gFrameTimeDraw);
+			gAppUI.DrawText(cmd, float2(8, 15), eastl::string().sprintf("CPU %f ms", gTimer.GetUSecAverage() / 1000.0f).c_str(), &gFrameTimeDraw);
 
 #if !defined(__ANDROID__)
-				gAppUI.DrawText(
-					cmd, float2(8, 40), eastl::string().sprintf("GPU %f ms", (float)pGpuProfiler->mCumulativeTime * 1000.0f).c_str(),
-					&gFrameTimeDraw);
-				gAppUI.DrawDebugGpuProfile(cmd, float2(8, 65), pGpuProfiler, NULL);
+			gAppUI.DrawText(
+				cmd, float2(8, 40), eastl::string().sprintf("GPU %f ms", (float)pGpuProfiler->mCumulativeTime * 1000.0f).c_str(),
+				&gFrameTimeDraw);
+			gAppUI.DrawDebugGpuProfile(cmd, float2(8, 65), pGpuProfiler, NULL);
 #endif
 
-				gAppUI.Gui(pGui);
+			cmdDrawProfiler();
 
-				cmdDrawProfiler();
+			gAppUI.Gui(pGui);
 
-				gAppUI.Draw(cmd);
-				cmdBindRenderTargets(cmd, 0, NULL, NULL, NULL, NULL, NULL, -1, -1);
-			}
+			gAppUI.Draw(cmd);
+			cmdBindRenderTargets(cmd, 0, NULL, NULL, NULL, NULL, NULL, -1, -1);
 			cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
 			TextureBarrier textureBarrier = { pSwapChainRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
 			cmdResourceBarrier(cmd, 0, NULL, 1, &textureBarrier);
-			cmdEndGpuFrameProfile(cmd, pGpuProfiler);
 		}
+		cmdEndGpuFrameProfile(cmd, pGpuProfiler);
 		endCmd(cmd);
 		allCmds[3] = cmd;
 
@@ -1402,11 +1412,11 @@ public:
 					DescriptorData params[3] = {};
 					params[0].pName = "HdrTexture";
 					params[0].ppTextures = &renderTargets.hdr[i]->pTexture;
-					params[0].pName = "BloomTexture";
-					params[0].ppTextures = &renderTargets.bloom[i]->pTexture;
+					params[1].pName = "BloomTexture";
+					params[1].ppTextures = &renderTargets.bloom[i]->pTexture;
 					params[2].pName = "ToneMappingData";
 					params[2].ppBuffers = &pToneMappingBuffer[i];
-					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::ToneMapping]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
+					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::ToneMapping]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 3, params);
 				}
 			}
 		}

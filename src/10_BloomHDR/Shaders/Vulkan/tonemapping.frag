@@ -8,7 +8,7 @@ layout (binding = 1) uniform sampler								uSampler0;
 layout (UPDATE_FREQ_PER_FRAME,  binding = 2) uniform texture2D		HdrTexture;
 layout (UPDATE_FREQ_PER_FRAME,  binding = 3) uniform texture2D		BloomTexture;
 
-layout(UPDATE_FREQ_PER_FRAME, set = 0, binding = 0) uniform ToneMappingData
+layout(UPDATE_FREQ_PER_FRAME, binding = 0) uniform ToneMappingData
 {
 	float inExposure;
 	float inGamma;
@@ -20,8 +20,8 @@ layout(location = 0) out vec4 outColor;
 
 void main()
 {    
-	outColor = texture(sampler2D(BloomTexture, uSampler0), UV);
-	return;
+	//outColor = texture(sampler2D(BloomTexture, uSampler0), UV);
+	//return;
 
 	// Vertical Blur
 	float weight[5];

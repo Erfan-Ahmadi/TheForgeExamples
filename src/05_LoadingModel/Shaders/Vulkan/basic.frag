@@ -32,7 +32,7 @@ struct SpotLight
     vec3 att_params;
 };
 
-layout (std140, set = 0, binding=4) uniform LightData
+layout (std140, UPDATE_FREQ_PER_FRAME, binding = 4) uniform LightData
 {
 	uniform int numDirectionalLights;
 	uniform int numPointLights;
@@ -40,24 +40,24 @@ layout (std140, set = 0, binding=4) uniform LightData
 	uniform vec3 viewPos;
 };
 
-layout (std430, set=0, binding=5) buffer DirectionalLights
+layout (std430, UPDATE_FREQ_PER_FRAME, binding = 5) buffer DirectionalLights
 {
     DirectionalLight DirectionalLightsBuffer[];
 };
 
-layout (std430, set=0, binding=6) buffer PointLights
+layout (std430, UPDATE_FREQ_PER_FRAME, binding = 6) buffer PointLights
 {
     PointLight PointLightsBuffer[];
 };
 
-layout (std430, set=0, binding=7) buffer SpotLights
+layout (std430, UPDATE_FREQ_PER_FRAME, binding = 7) buffer SpotLights
 {
     SpotLight SpotLightsBuffer[];
 };
 
-layout (set = 0, binding = 1) uniform texture2D		Texture;
-layout (set = 0, binding = 2) uniform texture2D		TextureSpecular;
-layout (set = 0, binding = 3) uniform sampler		uSampler0;
+layout (UPDATE_FREQ_NONE, binding = 1) uniform texture2D		Texture;
+layout (UPDATE_FREQ_NONE, binding = 2) uniform texture2D		TextureSpecular;
+layout (UPDATE_FREQ_NONE, binding = 3) uniform sampler			uSampler0;
 
 layout(location = 0) out vec4 outColor;
 

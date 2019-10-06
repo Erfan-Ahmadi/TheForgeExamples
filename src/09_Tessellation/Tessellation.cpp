@@ -204,7 +204,7 @@ public:
 		addSampler(pRenderer, &samplerDesc, &pSampler);
 
 		// Resource Binding
-		const char* samplerNames = { "uSampler0 " };
+		const char* samplerNames[] = { "uSampler0 " };
 
 		{
 			// Root Signature for Forward Pipeline
@@ -214,7 +214,7 @@ public:
 				rootDesc.mShaderCount = 1;
 				rootDesc.ppShaders = shaders;
 				rootDesc.mStaticSamplerCount = 1;
-				rootDesc.ppStaticSamplerNames = &samplerNames;
+				rootDesc.ppStaticSamplerNames = samplerNames;
 				rootDesc.ppStaticSamplers = &pSampler;
 				addRootSignature(pRenderer, &rootDesc, &RenderPasses[RenderPass::Tessellation]->pRootSignature);
 			}

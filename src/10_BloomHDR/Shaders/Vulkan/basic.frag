@@ -55,9 +55,9 @@ layout (std430, UPDATE_FREQ_PER_FRAME, binding = 7) buffer SpotLights
     SpotLight SpotLightsBuffer[];
 };
 
-layout (binding = 1) uniform texture2D		Texture;
-layout (binding = 2) uniform texture2D		TextureSpecular;
-layout (binding = 3) uniform sampler		uSampler0;
+layout (UPDATE_FREQ_NONE, binding = 1) uniform texture2D		Texture;
+layout (UPDATE_FREQ_NONE, binding = 2) uniform texture2D		TextureSpecular;
+layout (UPDATE_FREQ_NONE, binding = 3) uniform sampler			uSampler0;
 
 layout(location = 0) out vec4 outColor;
 
