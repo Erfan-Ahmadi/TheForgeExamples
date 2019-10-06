@@ -16,6 +16,9 @@
     <Filter Include="Shaders\D3D12\bloom">
       <UniqueIdentifier>{c91cb292-12b3-48b6-9bd3-4a98b7fac04b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders\Vulkan\bloom">
+      <UniqueIdentifier>{702b06c2-a3ad-40b8-9733-b76e392827b4}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\10_BloomHDR\BloomHDR.cpp">
@@ -53,11 +56,64 @@
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\bloom.vert">
       <Filter>Shaders\D3D12\bloom</Filter>
     </None>
-    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlur.vert">
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlurH.frag">
       <Filter>Shaders\D3D12\bloom</Filter>
     </None>
-    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlur.frag">
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlurH.vert">
       <Filter>Shaders\D3D12\bloom</Filter>
     </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlurV.frag">
+      <Filter>Shaders\D3D12\bloom</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlurV.vert">
+      <Filter>Shaders\D3D12\bloom</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\profile.frag">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\profile.vert">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\tonemapping.frag">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\tonemapping.vert">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\basic.frag">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\basic.vert">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\light.frag">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\light.vert">
+      <Filter>Shaders\Vulkan</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\bloom\gaussianBlurH.vert">
+      <Filter>Shaders\Vulkan\bloom</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\bloom\gaussianBlurV.frag">
+      <Filter>Shaders\Vulkan\bloom</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\bloom\gaussianBlurV.vert">
+      <Filter>Shaders\Vulkan\bloom</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\bloom\bloom.frag">
+      <Filter>Shaders\Vulkan\bloom</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\bloom\bloom.vert">
+      <Filter>Shaders\Vulkan\bloom</Filter>
+    </None>
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\bloom\gaussianBlurH.frag">
+      <Filter>Shaders\Vulkan\bloom</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\src\common.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

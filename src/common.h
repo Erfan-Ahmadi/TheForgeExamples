@@ -21,10 +21,10 @@ namespace meshes
 		const size_t num_points = 6 * 2;
 		float3* pPoints = (float3*)conf_malloc(num_points * sizeof(float3));
 
-		Vector3 topLeft		= Vector3{ -0.5f, +0.5f, +1.0f };
-		Vector3 topRight	= Vector3{ +0.5f, +0.5f, +1.0f };
-		Vector3 botLeft		= Vector3{ -0.5f, -0.5f, +1.0f };
-		Vector3 botRight	= Vector3{ +0.5f, -0.5f, +1.0f };
+		Vector3 topLeft = Vector3{ -0.5f, +0.5f, +1.0f };
+		Vector3 topRight = Vector3{ +0.5f, +0.5f, +1.0f };
+		Vector3 botLeft = Vector3{ -0.5f, -0.5f, +1.0f };
+		Vector3 botRight = Vector3{ +0.5f, -0.5f, +1.0f };
 
 		// Top Right Triangle
 		pPoints[0] = v3ToF3(topRight);
@@ -53,10 +53,10 @@ namespace meshes
 		const size_t num_indices = 6;
 		float3* pPoints = (float3*)conf_malloc(num_points * sizeof(float3));
 
-		Vector3 topLeft		= Vector3{ -0.5f, +0.5f, -1.0f };
-		Vector3 topRight	= Vector3{ +0.5f, +0.5f, -1.0f };
-		Vector3 botLeft		= Vector3{ -0.5f, -0.5f, -1.0f };
-		Vector3 botRight	= Vector3{ +0.5f, -0.5f, -1.0f };
+		Vector3 topLeft = Vector3{ -0.5f, +0.5f, -1.0f };
+		Vector3 topRight = Vector3{ +0.5f, +0.5f, -1.0f };
+		Vector3 botLeft = Vector3{ -0.5f, -0.5f, -1.0f };
+		Vector3 botRight = Vector3{ +0.5f, -0.5f, -1.0f };
 
 		pPoints[0] = v3ToF3(topLeft);
 		pPoints[1] = float3(0.0f, 0.0f, -1.0f);

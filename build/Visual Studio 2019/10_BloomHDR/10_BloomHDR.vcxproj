@@ -34,14 +34,33 @@
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\basic.vert" />
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\bloom.frag" />
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\bloom.vert" />
-    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlur.frag" />
-    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlur.vert" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlurV.frag" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlurV.vert" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlurH.frag" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\bloom\gaussianBlurH.vert" />
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\light.frag" />
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\light.vert" />
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\profile.frag" />
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\profile.vert" />
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\tonemapping.frag" />
     <None Include="..\..\..\src\10_BloomHDR\Shaders\D3D12\tonemapping.vert" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\basic.frag" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\basic.vert" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\bloom\bloom.frag" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\bloom\bloom.vert" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\bloom\gaussianBlurH.frag" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\bloom\gaussianBlurH.vert" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\bloom\gaussianBlurV.frag" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\bloom\gaussianBlurV.vert" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\light.frag" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\light.vert" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\profile.frag" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\profile.vert" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\tonemapping.frag" />
+    <None Include="..\..\..\src\10_BloomHDR\Shaders\Vulkan\tonemapping.vert" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\src\common.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{e7566989-8929-446e-9b1e-7bd49d1df538}</ProjectGuid>

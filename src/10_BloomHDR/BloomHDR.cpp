@@ -70,23 +70,30 @@ const char* pTexturesFileNames[] =
 	"lion/lion_specular"
 };
 
-CmdPool* pCmdPool;
-Cmd** ppCmds;
 
 struct
 {
 	RenderTarget* hdr[gImageCount];
-	RenderTarget* bright[gImageCount];
+	RenderTarget* bloom[gImageCount];
 	RenderTarget* blurred[gImageCount];
 } renderTargets;
 
+// TODO: Find Good Data Representation of RenderPasses and Pipelines and ...
 class RenderPassData
 {
 public:
+	Pipeline* pPipeline;
 	Shader* pShader;
 	RootSignature* pRootSignature;
 	DescriptorSet* pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_COUNT];
-	Pipeline* pPipeline;
+	CmdPool* pCmdPool;
+	Cmd** ppCmds;
+
+	RenderPassData()
+	{
+		addCmdPool(pRenderer, pGraphicsQueue, false, &pCmdPool);
+		addCmd_n(pCmdPool, false, gImageCount, &ppCmds);
+	}
 };
 
 struct RenderPass
@@ -117,7 +124,7 @@ struct MeshBatch
 
 struct SceneData
 {
-	eastl::vector<MeshBatch*> meshes;
+	eastl::vector<MeshBatch*> scene;
 	MeshBatch* sphere;
 } sceneData;
 
@@ -267,9 +274,6 @@ public:
 			RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>((RenderPass::Enum)(i), pass));
 		}
 
-		addCmdPool(pRenderer, pGraphicsQueue, false, &pCmdPool);
-		addCmd_n(pCmdPool, false, gImageCount, &ppCmds);
-
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
 			addFence(pRenderer, &pRenderCompleteFences[i]);
@@ -294,8 +298,8 @@ public:
 		shaderDesc.mStages[1] = { "bloom/bloom.frag", NULL, 0, FSR_SrcShaders };
 		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::BloomDownres]->pShader);
 
-		shaderDesc.mStages[0] = { "bloom/gaussianBlur.vert", NULL, 0, FSR_SrcShaders };
-		shaderDesc.mStages[1] = { "bloom/gaussianBlur.frag", NULL, 0, FSR_SrcShaders };
+		shaderDesc.mStages[0] = { "bloom/gaussianBlurV.vert", NULL, 0, FSR_SrcShaders };
+		shaderDesc.mStages[1] = { "bloom/gaussianBlurV.frag", NULL, 0, FSR_SrcShaders };
 		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::Blur]->pShader);
 
 		shaderDesc.mStages[0] = { "tonemapping.vert", NULL, 0, FSR_SrcShaders };
@@ -331,7 +335,7 @@ public:
 									ADDRESS_MODE_CLAMP_TO_EDGE,
 									ADDRESS_MODE_CLAMP_TO_EDGE,
 									0,
-									0};
+									0 };
 		addSampler(pRenderer, &samplerDesc, &pSampler);
 
 		// Resource Binding
@@ -341,7 +345,7 @@ public:
 			{
 				Shader* shaders[2] = { RenderPasses[RenderPass::Forward]->pShader, RenderPasses[RenderPass::BloomDownres]->pShader };
 				RootSignatureDesc rootDesc = {};
-				rootDesc.mShaderCount = 2;
+				rootDesc.mShaderCount = 1;
 				rootDesc.ppShaders = shaders;
 				rootDesc.mStaticSamplerCount = 1;
 				rootDesc.ppStaticSamplerNames = &samplerNames;
@@ -382,7 +386,7 @@ public:
 				setDesc = { RenderPasses[RenderPass::Blur]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
 				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Blur]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
 			}
-			
+
 			// RenderPass::ToneMapping
 			{
 				RootSignatureDesc rootDesc = {};
@@ -554,7 +558,15 @@ public:
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
 			removeResource(pUniformBuffers[i]);
+			removeResource(pToneMappingBuffer[i]);
 		}
+
+		removeResource(pInstancePositionBuffer);
+		removeResource(pInstanceColorBuffer);
+
+		removeResource(lightBuffers.pDirLightsBuffer);
+		removeResource(lightBuffers.pPointLightsBuffer);
+		removeResource(lightBuffers.pSpotLightsBuffer);
 
 		//Delete rendering passes
 		for (RenderPassMap::iterator iter = RenderPasses.begin(); iter != RenderPasses.end(); ++iter)
@@ -573,22 +585,20 @@ public:
 			if (pass->pRootSignature)
 				removeRootSignature(pRenderer, pass->pRootSignature);
 
+			removeCmd_n(pass->pCmdPool, gImageCount, pass->ppCmds);
+			removeCmdPool(pRenderer, pass->pCmdPool);
+
 			pass->~RenderPassData();
 			conf_free(pass);
 		}
 
-		removeCmd_n(pCmdPool, gImageCount, ppCmds);
-		removeCmdPool(pRenderer, pCmdPool);
-
 		RenderPasses.empty();
 
-		for (size_t i = 0; i < sceneData.meshes.size(); ++i)
+		for (size_t i = 0; i < sceneData.scene.size(); ++i)
 		{
-			removeResource(sceneData.meshes[i]->pPositionStream);
-			removeResource(sceneData.meshes[i]->pUVStream);
-			removeResource(sceneData.meshes[i]->pNormalStream);
-			removeResource(sceneData.meshes[i]->pIndicesStream);
+			removeMesh(sceneData.scene[i]);
 		}
+		removeMesh(sceneData.sphere);
 
 		removeResource(textures.pTextureColor);
 		removeResource(textures.pTextureSpecular);
@@ -655,7 +665,7 @@ public:
 		for (int i = 0; i < gImageCount; ++i)
 			removeRenderTarget(pRenderer, renderTargets.hdr[i]);
 		for (int i = 0; i < gImageCount; ++i)
-			removeRenderTarget(pRenderer, renderTargets.bright[i]);
+			removeRenderTarget(pRenderer, renderTargets.bloom[i]);
 		for (int i = 0; i < gImageCount; ++i)
 			removeRenderTarget(pRenderer, renderTargets.blurred[i]);
 
@@ -676,7 +686,7 @@ public:
 
 		static float currentLightTime;
 		if (!gPauseLights)
-			currentLightTime += deltaTime;
+			currentLightTime = 100;
 
 		// update camera with time
 		mat4 viewMat = pCameraController->getViewMatrix();
@@ -746,6 +756,7 @@ public:
 
 	void Draw()
 	{
+		Cmd* allCmds[4];
 		acquireNextImage(pRenderer, pSwapChain, pImageAquiredSemaphore, NULL, &gFrameIndex);
 
 		Semaphore* pRenderCompleteSemaphore = pRenderCompleteSemaphores[gFrameIndex];
@@ -796,216 +807,234 @@ public:
 
 		RenderTarget* pSwapChainRenderTarget = pSwapChain->ppSwapchainRenderTargets[gFrameIndex];
 		RenderTarget* pHdrRenderTarget = renderTargets.hdr[gFrameIndex];
-		RenderTarget* pBrightRenderTarget = renderTargets.bright[gFrameIndex];
+		RenderTarget* pBloomRenderTarget = renderTargets.bloom[gFrameIndex];
 		RenderTarget* pBlurRenderTarget = renderTargets.blurred[gFrameIndex];
 
-		Cmd* cmd = ppCmds[gFrameIndex];
+		Cmd* cmd = RenderPasses[RenderPass::Forward]->ppCmds[gFrameIndex];
+		beginCmd(cmd);
 		{
-			beginCmd(cmd);
 			cmdBeginGpuFrameProfile(cmd, pGpuProfiler);
+
+			cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Render Scene Pass", true);
 			{
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Render Scene Pass", true);
+				TextureBarrier textureBarriers[2] = {
+					{ pHdrRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+					{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
+				};
+
+				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
+
+				loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
+				loadActions.mClearColorValues[0] = pHdrRenderTarget->mDesc.mClearValue;
+
+				cmdBindRenderTargets(
+					cmd,
+					1,
+					&pHdrRenderTarget,
+					pDepthBuffer,
+					&loadActions, NULL, NULL, -1, -1);
+
+				cmdSetViewport(
+					cmd, 0.0f, 0.0f, (float)pHdrRenderTarget->mDesc.mWidth,
+					(float)pHdrRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+				cmdSetScissor(
+					cmd, 0, 0, pHdrRenderTarget->mDesc.mWidth,
+					pHdrRenderTarget->mDesc.mHeight);
+
+				cmdBindPipeline(cmd, RenderPasses[RenderPass::Forward]->pPipeline);
 				{
-					TextureBarrier textureBarriers[2] = {
-						{ pHdrRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
-						{ pDepthBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
-					};
+					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
 
-					cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
-
-					loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
-					loadActions.mClearColorValues[0] = pHdrRenderTarget->mDesc.mClearValue;
-
-					cmdBindRenderTargets(
-						cmd,
-						1,
-						&pHdrRenderTarget,
-						pDepthBuffer,
-						&loadActions, NULL, NULL, -1, -1);
-
-					cmdSetViewport(
-						cmd, 0.0f, 0.0f, (float)pHdrRenderTarget->mDesc.mWidth,
-						(float)pHdrRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
-					cmdSetScissor(
-						cmd, 0, 0, pHdrRenderTarget->mDesc.mWidth,
-						pHdrRenderTarget->mDesc.mHeight);
-
-					cmdBindPipeline(cmd, RenderPasses[RenderPass::Forward]->pPipeline);
+					for (int i = 0; i < sceneData.scene.size(); ++i)
 					{
-						cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
-						cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
-
-						for (int i = 0; i < sceneData.meshes.size(); ++i)
-						{
-							Buffer* pVertexBuffers[] = { sceneData.meshes[i]->pPositionStream, sceneData.meshes[i]->pNormalStream, sceneData.meshes[i]->pUVStream };
-							cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
-							cmdBindIndexBuffer(cmd, sceneData.meshes[i]->pIndicesStream, 0);
-							cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
-						}
-					}
-
-					cmdBindPipeline(cmd, RenderPasses[RenderPass::Light]->pPipeline);
-					{
-						cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
-						cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
-
-						Buffer* pVertexBuffers[] = { sceneData.sphere->pPositionStream, pInstancePositionBuffer, pInstanceColorBuffer };
+						Buffer* pVertexBuffers[] = { sceneData.scene[i]->pPositionStream, sceneData.scene[i]->pNormalStream, sceneData.scene[i]->pUVStream };
 						cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
-						cmdBindIndexBuffer(cmd, sceneData.sphere->pIndicesStream, 0);
-						cmdDrawIndexedInstanced(cmd, sceneData.sphere->mCountIndices, 0, gPointLights, 0, 0);
+						cmdBindIndexBuffer(cmd, sceneData.scene[i]->pIndicesStream, 0);
+						cmdDrawIndexed(cmd, sceneData.scene[0]->mCountIndices, 0, 0);
 					}
 				}
-				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Bloom Pass", true);
+				cmdBindPipeline(cmd, RenderPasses[RenderPass::Light]->pPipeline);
 				{
-					TextureBarrier textureBarriers[2] = {
-						{ pBrightRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
-						{ pBloomDepthStencilBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
-					};
-					cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
+					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
 
-					loadActions.mLoadActionDepth = LOAD_ACTION_CLEAR;
-					loadActions.mClearDepth.depth = 1.0f;
-					loadActions.mLoadActionStencil = LOAD_ACTION_CLEAR;
-					loadActions.mClearDepth.stencil = 0;
-					loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
-					loadActions.mClearColorValues[0] = pBrightRenderTarget->mDesc.mClearValue;
+					Buffer* pVertexBuffers[] = { sceneData.sphere->pPositionStream, pInstancePositionBuffer, pInstanceColorBuffer };
+					cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
+					cmdBindIndexBuffer(cmd, sceneData.sphere->pIndicesStream, 0);
+					cmdDrawIndexedInstanced(cmd, sceneData.sphere->mCountIndices, 0, gPointLights, 0, 0);
+				}
+			}
+			cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
+		}
+		endCmd(cmd);
+		allCmds[0] = cmd;
 
-					cmdBindRenderTargets(
-						cmd,
-						1,
-						&pBrightRenderTarget,
-						pBloomDepthStencilBuffer,
-						&loadActions, NULL, NULL, -1, -1);
+		cmd = RenderPasses[RenderPass::BloomDownres]->ppCmds[gFrameIndex];
+		beginCmd(cmd);
+		{
+			cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Bloom Pass", true);
+			{
+				TextureBarrier textureBarriers[2] = {
+					{ pBloomRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+					{ pBloomDepthStencilBuffer->pTexture, RESOURCE_STATE_DEPTH_WRITE }
+				};
+				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
 
-					cmdSetViewport(
-						cmd, 0.0f, 0.0f, (float)pBrightRenderTarget->mDesc.mWidth,
-						(float)pBrightRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+				loadActions.mLoadActionDepth = LOAD_ACTION_CLEAR;
+				loadActions.mClearDepth.depth = 1.0f;
+				loadActions.mLoadActionStencil = LOAD_ACTION_CLEAR;
+				loadActions.mClearDepth.stencil = 0;
+				loadActions.mLoadActionsColor[0] = LOAD_ACTION_CLEAR;
+				loadActions.mClearColorValues[0] = pBloomRenderTarget->mDesc.mClearValue;
 
-					cmdSetScissor(
-						cmd, 0, 0, pBrightRenderTarget->mDesc.mWidth,
-						pBrightRenderTarget->mDesc.mHeight);
+				cmdBindRenderTargets(
+					cmd,
+					1,
+					&pBloomRenderTarget,
+					pBloomDepthStencilBuffer,
+					&loadActions, NULL, NULL, -1, -1);
 
-					cmdBindPipeline(cmd, RenderPasses[RenderPass::BloomDownres]->pPipeline);
+				cmdSetViewport(
+					cmd, 0.0f, 0.0f, (float)pBloomRenderTarget->mDesc.mWidth,
+					(float)pBloomRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+
+				cmdSetScissor(
+					cmd, 0, 0, pBloomRenderTarget->mDesc.mWidth,
+					pBloomRenderTarget->mDesc.mHeight);
+
+				cmdBindPipeline(cmd, RenderPasses[RenderPass::BloomDownres]->pPipeline);
+				{
+					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+
+					for (int i = 0; i < sceneData.scene.size(); ++i)
 					{
-						cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
-						cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Forward]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
-
-						for (int i = 0; i < sceneData.meshes.size(); ++i)
-						{
-							Buffer* pVertexBuffers[] = { sceneData.meshes[i]->pPositionStream, sceneData.meshes[i]->pNormalStream, sceneData.meshes[i]->pUVStream };
-							cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
-							cmdBindIndexBuffer(cmd, sceneData.meshes[i]->pIndicesStream, 0);
-							cmdDrawIndexed(cmd, sceneData.meshes[0]->mCountIndices, 0, 0);
-						}
+						Buffer* pVertexBuffers[] = { sceneData.scene[i]->pPositionStream, sceneData.scene[i]->pNormalStream, sceneData.scene[i]->pUVStream };
+						cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
+						cmdBindIndexBuffer(cmd, sceneData.scene[i]->pIndicesStream, 0);
+						cmdDrawIndexed(cmd, sceneData.scene[0]->mCountIndices, 0, 0);
 					}
 				}
-				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
-				
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Blur Pass", true);
+			}
+			cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
+		}
+		endCmd(cmd);
+		allCmds[1] = cmd;
+
+		cmd = RenderPasses[RenderPass::Blur]->ppCmds[gFrameIndex];
+		beginCmd(cmd);
+		{
+			cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Blur Pass", true);
+			{
+				TextureBarrier textureBarriers[2] = {
+					{ pBlurRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+					{ pBloomRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE }
+				};
+				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
+
+				loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
+				loadActions.mLoadActionStencil = LOAD_ACTION_DONTCARE;
+				cmdBindRenderTargets(
+					cmd,
+					1,
+					&pBlurRenderTarget,
+					NULL,
+					&loadActions, NULL, NULL, -1, -1);
+
+				cmdSetViewport(
+					cmd, 0.0f, 0.0f, (float)pBlurRenderTarget->mDesc.mWidth,
+					(float)pBlurRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+				cmdSetScissor(
+					cmd, 0, 0, pBlurRenderTarget->mDesc.mWidth,
+					pBlurRenderTarget->mDesc.mHeight);
+
+				cmdBindPipeline(cmd, RenderPasses[RenderPass::Blur]->pPipeline);
 				{
-					TextureBarrier textureBarriers[2] = {
-						{ pBloomDepthStencilBuffer->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
-						{ pBlurRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET }
-					};
-					cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
-
-					loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
-					loadActions.mLoadActionStencil = LOAD_ACTION_DONTCARE;
-					cmdBindRenderTargets(
-						cmd,
-						1,
-						&pBlurRenderTarget,
-						NULL,
-						&loadActions, NULL, NULL, -1, -1);
-
-					cmdSetViewport(
-						cmd, 0.0f, 0.0f, (float)pBlurRenderTarget->mDesc.mWidth,
-						(float)pBlurRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
-					cmdSetScissor(
-						cmd, 0, 0, pBlurRenderTarget->mDesc.mWidth,
-						pBlurRenderTarget->mDesc.mHeight);
-
-					cmdBindPipeline(cmd, RenderPasses[RenderPass::Blur]->pPipeline);
-					{
-						cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Blur]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
-						cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Blur]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
-						cmdDraw(cmd, 3, 0);
-					}
+					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::Blur]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::Blur]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+					cmdDraw(cmd, 3, 0);
 				}
-				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
+			}
+			cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
+		}
+		endCmd(cmd);
+		allCmds[2] = cmd;
 
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Composition and ToneMapping Pass", true);
+		cmd = RenderPasses[RenderPass::ToneMapping]->ppCmds[gFrameIndex];
+		beginCmd(cmd);
+		{
+			cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Composition and ToneMapping Pass", true);
+			{
+				TextureBarrier textureBarriers[3] = {
+					{ pHdrRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
+					{ pBlurRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
+					{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET }
+				};
+				cmdResourceBarrier(cmd, 0, nullptr, 3, textureBarriers);
+
+				loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
+				loadActions.mLoadActionStencil = LOAD_ACTION_DONTCARE;
+				cmdBindRenderTargets(
+					cmd,
+					1,
+					&pSwapChainRenderTarget,
+					NULL,
+					&loadActions, NULL, NULL, -1, -1);
+
+				cmdSetViewport(
+					cmd, 0.0f, 0.0f, (float)pSwapChainRenderTarget->mDesc.mWidth,
+					(float)pSwapChainRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+				cmdSetScissor(
+					cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth,
+					pSwapChainRenderTarget->mDesc.mHeight);
+
+				cmdBindPipeline(cmd, RenderPasses[RenderPass::ToneMapping]->pPipeline);
 				{
-					TextureBarrier textureBarriers[3] = {
-						{ pHdrRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
-						{ pBlurRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE },
-						{ pSwapChainRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET }
-					};
-					cmdResourceBarrier(cmd, 0, nullptr, 3, textureBarriers);
-
-					loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
-					loadActions.mLoadActionStencil = LOAD_ACTION_DONTCARE;
-					cmdBindRenderTargets(
-						cmd,
-						1,
-						&pSwapChainRenderTarget,
-						NULL,
-						&loadActions, NULL, NULL, -1, -1);
-
-					cmdSetViewport(
-						cmd, 0.0f, 0.0f, (float)pSwapChainRenderTarget->mDesc.mWidth,
-						(float)pSwapChainRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
-					cmdSetScissor(
-						cmd, 0, 0, pSwapChainRenderTarget->mDesc.mWidth,
-						pSwapChainRenderTarget->mDesc.mHeight);
-
-					cmdBindPipeline(cmd, RenderPasses[RenderPass::ToneMapping]->pPipeline);
-					{
-						cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::ToneMapping]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
-						cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::ToneMapping]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
-						cmdDraw(cmd, 3, 0);
-					}
+					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::ToneMapping]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::ToneMapping]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+					cmdDraw(cmd, 3, 0);
 				}
-				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
+			}
+			cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
-				loadActions = {};
-				loadActions.mLoadActionsColor[0] = LOAD_ACTION_LOAD;
-				cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
-				cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw UI", true);
-				{
-					static HiresTimer gTimer;
-					gTimer.GetUSec(true);
+			loadActions = {};
+			loadActions.mLoadActionsColor[0] = LOAD_ACTION_LOAD;
+			cmdBindRenderTargets(cmd, 1, &pSwapChainRenderTarget, NULL, &loadActions, NULL, NULL, -1, -1);
+			cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Draw UI", true);
+			{
+				static HiresTimer gTimer;
+				gTimer.GetUSec(true);
 
-					gVirtualJoystick.Draw(cmd, { 1.0f, 1.0f, 1.0f, 1.0f });
+				gVirtualJoystick.Draw(cmd, { 1.0f, 1.0f, 1.0f, 1.0f });
 
-					gAppUI.DrawText(cmd, float2(8, 15), eastl::string().sprintf("CPU %f ms", gTimer.GetUSecAverage() / 1000.0f).c_str(), &gFrameTimeDraw);
+				gAppUI.DrawText(cmd, float2(8, 15), eastl::string().sprintf("CPU %f ms", gTimer.GetUSecAverage() / 1000.0f).c_str(), &gFrameTimeDraw);
 
 #if !defined(__ANDROID__)
-					gAppUI.DrawText(
-						cmd, float2(8, 40), eastl::string().sprintf("GPU %f ms", (float)pGpuProfiler->mCumulativeTime * 1000.0f).c_str(),
-						&gFrameTimeDraw);
-					gAppUI.DrawDebugGpuProfile(cmd, float2(8, 65), pGpuProfiler, NULL);
+				gAppUI.DrawText(
+					cmd, float2(8, 40), eastl::string().sprintf("GPU %f ms", (float)pGpuProfiler->mCumulativeTime * 1000.0f).c_str(),
+					&gFrameTimeDraw);
+				gAppUI.DrawDebugGpuProfile(cmd, float2(8, 65), pGpuProfiler, NULL);
 #endif
 
-					gAppUI.Gui(pGui);
+				gAppUI.Gui(pGui);
 
-					cmdDrawProfiler();
+				cmdDrawProfiler();
 
-					gAppUI.Draw(cmd);
-					cmdBindRenderTargets(cmd, 0, NULL, NULL, NULL, NULL, NULL, -1, -1);
-				}
-				cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
-
-				TextureBarrier textureBarrier = { pSwapChainRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
-				cmdResourceBarrier(cmd, 0, NULL, 1, &textureBarrier);
+				gAppUI.Draw(cmd);
+				cmdBindRenderTargets(cmd, 0, NULL, NULL, NULL, NULL, NULL, -1, -1);
 			}
-			cmdEndGpuFrameProfile(cmd, pGpuProfiler);
-			endCmd(cmd);
-		}
+			cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 
-		queueSubmit(pGraphicsQueue, 1, &cmd, pRenderCompleteFence, 1, &pImageAquiredSemaphore, 1, &pRenderCompleteSemaphore);
+			TextureBarrier textureBarrier = { pSwapChainRenderTarget->pTexture, RESOURCE_STATE_PRESENT };
+			cmdResourceBarrier(cmd, 0, NULL, 1, &textureBarrier);
+			cmdEndGpuFrameProfile(cmd, pGpuProfiler);
+		}
+		endCmd(cmd);
+		allCmds[3] = cmd;
+
+		queueSubmit(pGraphicsQueue, 4, allCmds, pRenderCompleteFence, 1, &pImageAquiredSemaphore, 1, &pRenderCompleteSemaphore);
 
 		queuePresent(pGraphicsQueue, pSwapChain, gFrameIndex, 1, &pRenderCompleteSemaphore);
 
@@ -1063,9 +1092,9 @@ public:
 
 			rtDesc.mFormat = TinyImageFormat_R16G16B16A16_SFLOAT;
 			for (int i = 0; i < gImageCount; ++i)
-				addRenderTarget(pRenderer, &rtDesc, &renderTargets.bright[i]);
+				addRenderTarget(pRenderer, &rtDesc, &renderTargets.bloom[i]);
 		}
-		
+
 		// Blur
 		{
 			RenderTargetDesc rtDesc = {};
@@ -1229,10 +1258,10 @@ public:
 			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
 			pipelineSettings.mRenderTargetCount = 1;
 			pipelineSettings.pDepthState = pDepthDefault;
-			pipelineSettings.pColorFormats = &renderTargets.bright[0]->mDesc.mFormat;
-			pipelineSettings.mSampleCount = renderTargets.bright[0]->mDesc.mSampleCount;
-			pipelineSettings.mSampleQuality = renderTargets.bright[0]->mDesc.mSampleQuality;
-			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
+			pipelineSettings.pColorFormats = &renderTargets.bloom[0]->mDesc.mFormat;
+			pipelineSettings.mSampleCount = renderTargets.bloom[0]->mDesc.mSampleCount;
+			pipelineSettings.mSampleQuality = renderTargets.bloom[0]->mDesc.mSampleQuality;
+			pipelineSettings.mDepthStencilFormat = pBloomDepthStencilBuffer->mDesc.mFormat;
 			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Forward]->pRootSignature;
 			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::BloomDownres]->pShader;
 			pipelineSettings.pVertexLayout = &vertexLayout;
@@ -1240,8 +1269,8 @@ public:
 
 			addPipeline(pRenderer, &desc, &RenderPasses[RenderPass::BloomDownres]->pPipeline);
 		}
-		
-		// ToneMapping
+
+		// Blur
 		{
 			PipelineDesc desc = {};
 			desc.mType = PIPELINE_TYPE_GRAPHICS;
@@ -1249,10 +1278,9 @@ public:
 			pipelineSettings.mPrimitiveTopo = PRIMITIVE_TOPO_TRI_LIST;
 			pipelineSettings.mRenderTargetCount = 1;
 			pipelineSettings.pDepthState = pDepthNone;
-			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
-			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
-			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
-			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
+			pipelineSettings.pColorFormats = &renderTargets.blurred[0]->mDesc.mFormat;
+			pipelineSettings.mSampleCount = renderTargets.blurred[0]->mDesc.mSampleCount;
+			pipelineSettings.mSampleQuality = renderTargets.blurred[0]->mDesc.mSampleQuality;
 			pipelineSettings.pRootSignature = RenderPasses[RenderPass::Blur]->pRootSignature;
 			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::Blur]->pShader;
 			pipelineSettings.pVertexLayout = NULL;
@@ -1348,7 +1376,7 @@ public:
 				}
 			}
 		}
-		
+
 		// RenderPass::Blur
 		{
 			// DESCRIPTOR_UPDATE_FREQ_PER_FRAME
@@ -1357,7 +1385,7 @@ public:
 				{
 					DescriptorData params[2] = {};
 					params[0].pName = "Texture";
-					params[0].ppTextures = &renderTargets.bright[i]->pTexture;
+					params[0].ppTextures = &renderTargets.bloom[i]->pTexture;
 					//params[2].pName = "ToneMappingData";
 					//params[2].ppBuffers = &pToneMappingBuffer[i];
 					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::Blur]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
@@ -1374,11 +1402,11 @@ public:
 					DescriptorData params[3] = {};
 					params[0].pName = "HdrTexture";
 					params[0].ppTextures = &renderTargets.hdr[i]->pTexture;
-					params[1].pName = "BloomTexture";
-					params[1].ppTextures = &renderTargets.blurred[i]->pTexture;
+					params[0].pName = "BloomTexture";
+					params[0].ppTextures = &renderTargets.bloom[i]->pTexture;
 					params[2].pName = "ToneMappingData";
 					params[2].ppBuffers = &pToneMappingBuffer[i];
-					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::ToneMapping]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 3, params);
+					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::ToneMapping]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
 				}
 			}
 		}
@@ -1470,7 +1498,7 @@ public:
 
 				MeshBatch* pMeshBatch = (MeshBatch*)conf_placement_new<MeshBatch>(conf_calloc(1, sizeof(MeshBatch)));
 
-				sceneData.meshes.push_back(pMeshBatch);
+				sceneData.scene.push_back(pMeshBatch);
 
 				// Vertex Buffer
 				BufferLoadDesc bufferDesc = {};
@@ -1548,6 +1576,17 @@ public:
 		}
 
 		return true;
+	}
+
+	void removeMesh(MeshBatch* mesh)
+	{
+		removeResource(mesh->pPositionStream);
+		removeResource(mesh->pIndicesStream);
+
+		if (mesh->pUVStream)
+			removeResource(mesh->pUVStream);
+		if (mesh->pNormalStream)
+			removeResource(mesh->pNormalStream);
 	}
 };
 
