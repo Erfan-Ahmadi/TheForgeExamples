@@ -88,10 +88,10 @@ public:
 	CmdPool* pCmdPool;
 	Cmd** ppCmds;
 
-	RenderPassData()
+	RenderPassData(const size_t& cmdCount)
 	{
 		addCmdPool(pRenderer, pGraphicsQueue, false, &pCmdPool);
-		addCmd_n(pCmdPool, false, gImageCount, &ppCmds);
+		addCmd_n(pCmdPool, false, cmdCount, &ppCmds);
 	}
 };
 
@@ -247,6 +247,9 @@ const char* pszBases[FSR_Count] = {
 
 bool gPauseLights = false;
 
+constexpr size_t gNumBlurPasses = 2;
+constexpr size_t gNumRenderPasses = 3 + gNumBlurPasses * 2;
+
 class BloomHDR : public IApp
 {
 public:
@@ -268,11 +271,23 @@ public:
 		queueDesc.mFlag = QUEUE_FLAG_NONE;
 		addQueue(pRenderer, &queueDesc, &pGraphicsQueue);
 
-		for (int i = 0; i < RenderPass::RENDER_PASS_COUNT; ++i)
-		{
-			RenderPassData* pass = conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)));
-			RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>((RenderPass::Enum)(i), pass));
-		}
+		RenderPassData* pass = conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), gImageCount);
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Forward, pass));
+
+		pass = conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), gImageCount);
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::Light, pass));
+
+		pass = conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), gImageCount);
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::BloomDownres, pass));
+
+		pass = conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), gImageCount * gNumBlurPasses);
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::BlurV, pass));
+
+		pass = conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), gImageCount * gNumBlurPasses);
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::BlurH, pass));
+
+		pass = conf_placement_new<RenderPassData>(conf_calloc(1, sizeof(RenderPassData)), gImageCount);
+		RenderPasses.insert(eastl::pair<RenderPass::Enum, RenderPassData*>(RenderPass::ToneMapping, pass));
 
 		for (uint32_t i = 0; i < gImageCount; ++i)
 		{
@@ -301,7 +316,7 @@ public:
 		shaderDesc.mStages[0] = { "bloom/gaussianBlurV.vert", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[1] = { "bloom/gaussianBlurV.frag", NULL, 0, FSR_SrcShaders };
 		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::BlurV]->pShader);
-		
+
 		shaderDesc.mStages[0] = { "bloom/gaussianBlurH.vert", NULL, 0, FSR_SrcShaders };
 		shaderDesc.mStages[1] = { "bloom/gaussianBlurH.frag", NULL, 0, FSR_SrcShaders };
 		addShader(pRenderer, &shaderDesc, &RenderPasses[RenderPass::BlurH]->pShader);
@@ -377,7 +392,7 @@ public:
 				setDesc = { RenderPasses[RenderPass::Light]->pRootSignature, DESCRIPTOR_UPDATE_FREQ_PER_FRAME, gImageCount };
 				addDescriptorSet(pRenderer, &setDesc, &RenderPasses[RenderPass::Light]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
 			}
-			
+
 			// RenderPass::BlurV
 			{
 				RootSignatureDesc rootDesc = {};
@@ -751,7 +766,7 @@ public:
 		pointLights[1].diffuse = float3{ 1.0f, 0.0f, 2.0f };
 		pointLights[1].specular = float3{ 1.0f, 0.0f, 2.0f };
 		pointLights[1].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
-		lightData.numPointLights = 1;
+		lightData.numPointLights = gPointLights;
 
 		for (int i = 0; i < gPointLights; ++i)
 		{
@@ -784,7 +799,7 @@ public:
 
 	void Draw()
 	{
-		Cmd* allCmds[5];
+		Cmd* allCmds[gNumRenderPasses];
 		acquireNextImage(pRenderer, pSwapChain, pImageAquiredSemaphore, NULL, &gFrameIndex);
 
 		Semaphore* pRenderCompleteSemaphore = pRenderCompleteSemaphores[gFrameIndex];
@@ -951,83 +966,89 @@ public:
 		endCmd(cmd);
 		allCmds[1] = cmd;
 
-		cmd = RenderPasses[RenderPass::BlurV]->ppCmds[gFrameIndex];
-		beginCmd(cmd);
+		// Blur Passes
 		{
-			cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Vertical Blur Pass", true);
+			for (int i = 0; i < gNumBlurPasses; ++i)
 			{
-				TextureBarrier textureBarriers[2] = {
-					{ pBlurRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
-					{ pBloomRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE }
-				};
-				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
-
-				loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
-				loadActions.mLoadActionStencil = LOAD_ACTION_DONTCARE;
-				cmdBindRenderTargets(
-					cmd,
-					1,
-					&pBlurRenderTarget,
-					NULL,
-					&loadActions, NULL, NULL, -1, -1);
-
-				cmdSetViewport(
-					cmd, 0.0f, 0.0f, (float)pBlurRenderTarget->mDesc.mWidth,
-					(float)pBlurRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
-				cmdSetScissor(
-					cmd, 0, 0, pBlurRenderTarget->mDesc.mWidth,
-					pBlurRenderTarget->mDesc.mHeight);
-
-				cmdBindPipeline(cmd, RenderPasses[RenderPass::BlurV]->pPipeline);
+				cmd = RenderPasses[RenderPass::BlurV]->ppCmds[gFrameIndex * gNumBlurPasses + i];
+				beginCmd(cmd);
 				{
-					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::BlurV]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
-					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::BlurV]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
-					cmdDraw(cmd, 3, 0);
+					cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Vertical Blur Pass", true);
+					{
+						TextureBarrier textureBarriers[2] = {
+							{ pBlurRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+							{ pBloomRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE }
+						};
+						cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
+
+						loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
+						loadActions.mLoadActionStencil = LOAD_ACTION_DONTCARE;
+						cmdBindRenderTargets(
+							cmd,
+							1,
+							&pBlurRenderTarget,
+							NULL,
+							&loadActions, NULL, NULL, -1, -1);
+
+						cmdSetViewport(
+							cmd, 0.0f, 0.0f, (float)pBlurRenderTarget->mDesc.mWidth,
+							(float)pBlurRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+						cmdSetScissor(
+							cmd, 0, 0, pBlurRenderTarget->mDesc.mWidth,
+							pBlurRenderTarget->mDesc.mHeight);
+
+						cmdBindPipeline(cmd, RenderPasses[RenderPass::BlurV]->pPipeline);
+						{
+							cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::BlurV]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+							cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::BlurV]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+							cmdDraw(cmd, 3, 0);
+						}
+					}
+					cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 				}
-			}
-			cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
-		}
-		endCmd(cmd);
-		allCmds[2] = cmd;
-		
-		cmd = RenderPasses[RenderPass::BlurH]->ppCmds[gFrameIndex];
-		beginCmd(cmd);
-		{
-			cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Horizontal Blur Pass", true);
-			{
-				TextureBarrier textureBarriers[2] = {
-					{ pBloomRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
-					{ pBlurRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE }
-				};
-				cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
+				endCmd(cmd);
+				allCmds[2 + i * 2] = cmd;
 
-				loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
-				loadActions.mLoadActionStencil = LOAD_ACTION_DONTCARE;
-				cmdBindRenderTargets(
-					cmd,
-					1,
-					&pBloomRenderTarget,
-					NULL,
-					&loadActions, NULL, NULL, -1, -1);
-
-				cmdSetViewport(
-					cmd, 0.0f, 0.0f, (float)pBloomRenderTarget->mDesc.mWidth,
-					(float)pBloomRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
-				cmdSetScissor(
-					cmd, 0, 0, pBloomRenderTarget->mDesc.mWidth,
-					pBloomRenderTarget->mDesc.mHeight);
-
-				cmdBindPipeline(cmd, RenderPasses[RenderPass::BlurH]->pPipeline);
+				cmd = RenderPasses[RenderPass::BlurH]->ppCmds[gFrameIndex * gNumBlurPasses + i];
+				beginCmd(cmd);
 				{
-					cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::BlurH]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
-					cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::BlurH]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
-					cmdDraw(cmd, 3, 0);
+					cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Horizontal Blur Pass", true);
+					{
+						TextureBarrier textureBarriers[2] = {
+							{ pBloomRenderTarget->pTexture, RESOURCE_STATE_RENDER_TARGET },
+							{ pBlurRenderTarget->pTexture, RESOURCE_STATE_SHADER_RESOURCE }
+						};
+						cmdResourceBarrier(cmd, 0, nullptr, 2, textureBarriers);
+
+						loadActions.mLoadActionDepth = LOAD_ACTION_DONTCARE;
+						loadActions.mLoadActionStencil = LOAD_ACTION_DONTCARE;
+						cmdBindRenderTargets(
+							cmd,
+							1,
+							&pBloomRenderTarget,
+							NULL,
+							&loadActions, NULL, NULL, -1, -1);
+
+						cmdSetViewport(
+							cmd, 0.0f, 0.0f, (float)pBloomRenderTarget->mDesc.mWidth,
+							(float)pBloomRenderTarget->mDesc.mHeight, 0.0f, 1.0f);
+						cmdSetScissor(
+							cmd, 0, 0, pBloomRenderTarget->mDesc.mWidth,
+							pBloomRenderTarget->mDesc.mHeight);
+
+						cmdBindPipeline(cmd, RenderPasses[RenderPass::BlurH]->pPipeline);
+						{
+							cmdBindDescriptorSet(cmd, 0, RenderPasses[RenderPass::BlurH]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_NONE]);
+							cmdBindDescriptorSet(cmd, gFrameIndex, RenderPasses[RenderPass::BlurH]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME]);
+							cmdDraw(cmd, 3, 0);
+						}
+					}
+					cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 				}
+				endCmd(cmd);
+				allCmds[3 + i * 2] = cmd;
 			}
-			cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 		}
-		endCmd(cmd);
-		allCmds[3] = cmd;
 
 		cmd = RenderPasses[RenderPass::ToneMapping]->ppCmds[gFrameIndex];
 		beginCmd(cmd);
@@ -1103,9 +1124,9 @@ public:
 		}
 		cmdEndGpuFrameProfile(cmd, pGpuProfiler);
 		endCmd(cmd);
-		allCmds[4] = cmd;
+		allCmds[gNumRenderPasses - 1] = cmd;
 
-		queueSubmit(pGraphicsQueue, 5, allCmds, pRenderCompleteFence, 1, &pImageAquiredSemaphore, 1, &pRenderCompleteSemaphore);
+		queueSubmit(pGraphicsQueue, gNumRenderPasses, allCmds, pRenderCompleteFence, 1, &pImageAquiredSemaphore, 1, &pRenderCompleteSemaphore);
 
 		queuePresent(pGraphicsQueue, pSwapChain, gFrameIndex, 1, &pRenderCompleteSemaphore);
 
@@ -1132,6 +1153,21 @@ public:
 	{
 		ClearValue colorClearBlack = { 0.0f, 0.0f, 0.0f, 0.0f };
 
+		// Depth Buffer
+		{
+			RenderTargetDesc rtDesc = {};
+			rtDesc.mArraySize = 1;
+			rtDesc.mClearValue.depth = 1.0f;
+			rtDesc.mClearValue.stencil = 0.0f;
+			rtDesc.mFormat = TinyImageFormat_D32_SFLOAT;
+			rtDesc.mDepth = 1;
+			rtDesc.mWidth = mSettings.mWidth;
+			rtDesc.mHeight = mSettings.mHeight;
+			rtDesc.mSampleCount = SAMPLE_COUNT_1;
+			rtDesc.mSampleQuality = 0;
+			addRenderTarget(pRenderer, &rtDesc, &pDepthBuffer);
+		}
+
 		// HDR
 		{
 			RenderTargetDesc rtDesc = {};
@@ -1149,13 +1185,15 @@ public:
 				addRenderTarget(pRenderer, &rtDesc, &renderTargets.hdr[i]);
 		}
 
+		float aspect_ratio = (float)mSettings.mWidth / mSettings.mHeight;
+
 		// Bright
 		{
 			RenderTargetDesc rtDesc = {};
 			rtDesc.mClearValue = colorClearBlack;
 			rtDesc.mArraySize = 1;
 			rtDesc.mDepth = 1;
-			rtDesc.mWidth = bloom_dim;
+			rtDesc.mWidth = bloom_dim * aspect_ratio;
 			rtDesc.mHeight = bloom_dim;
 			rtDesc.mSampleCount = SAMPLE_COUNT_1;
 			rtDesc.mSampleQuality = 0;
@@ -1172,8 +1210,8 @@ public:
 			rtDesc.mClearValue = colorClearBlack;
 			rtDesc.mArraySize = 1;
 			rtDesc.mDepth = 1;
-			rtDesc.mWidth = bloom_dim;
-			rtDesc.mHeight = bloom_dim;
+			rtDesc.mWidth = renderTargets.bloom[0]->mDesc.mWidth;
+			rtDesc.mHeight = renderTargets.bloom[0]->mDesc.mHeight;
 			rtDesc.mSampleCount = SAMPLE_COUNT_1;
 			rtDesc.mSampleQuality = 0;
 			rtDesc.pDebugName = L"Blurr";
@@ -1181,21 +1219,6 @@ public:
 			rtDesc.mFormat = TinyImageFormat_R16G16B16A16_SFLOAT;
 			for (int i = 0; i < gImageCount; ++i)
 				addRenderTarget(pRenderer, &rtDesc, &renderTargets.blurred[i]);
-		}
-
-		// Depth Buffer
-		{
-			RenderTargetDesc rtDesc = {};
-			rtDesc.mArraySize = 1;
-			rtDesc.mClearValue.depth = 1.0f;
-			rtDesc.mClearValue.stencil = 0.0f;
-			rtDesc.mFormat = TinyImageFormat_D32_SFLOAT;
-			rtDesc.mDepth = 1;
-			rtDesc.mWidth = mSettings.mWidth;
-			rtDesc.mHeight = mSettings.mHeight;
-			rtDesc.mSampleCount = SAMPLE_COUNT_1;
-			rtDesc.mSampleQuality = 0;
-			addRenderTarget(pRenderer, &rtDesc, &pDepthBuffer);
 		}
 
 		// Bloom DepthStencil Buffer
@@ -1206,8 +1229,8 @@ public:
 			rtDesc.mClearValue.stencil = 0.0f;
 			rtDesc.mFormat = TinyImageFormat_D24_UNORM_S8_UINT;
 			rtDesc.mDepth = 1;
-			rtDesc.mWidth = bloom_dim;
-			rtDesc.mHeight = bloom_dim;
+			rtDesc.mWidth = renderTargets.bloom[0]->mDesc.mWidth;
+			rtDesc.mHeight = renderTargets.bloom[0]->mDesc.mHeight;
 			rtDesc.mSampleCount = SAMPLE_COUNT_1;
 			rtDesc.mSampleQuality = 0;
 			addRenderTarget(pRenderer, &rtDesc, &pBloomDepthStencilBuffer);
@@ -1466,7 +1489,7 @@ public:
 				}
 			}
 		}
-		
+
 		// RenderPass::BlurV
 		{
 			// DESCRIPTOR_UPDATE_FREQ_PER_FRAME
@@ -1587,7 +1610,7 @@ public:
 		AssimpImporter::Model lionModel;
 
 		{
-			if (!importer.ImportModel("../../../../art/Meshes/lion.obj", &lionModel))
+			if (!importer.ImportModel("../../../../art/Meshes/lowpoly/geosphere.obj", &lionModel))
 			{
 				return false;
 			}
