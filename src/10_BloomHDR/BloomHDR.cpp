@@ -251,6 +251,8 @@ struct
 	float blurStrength = 1.5f;
 } blurData;
 
+Buffer* pBlurBuffer[gImageCount];
+
 uint32_t gUserNumBlurPasses = 1;
 
 // should be in sync with shader definitions
@@ -506,6 +508,23 @@ public:
 					addResource(&bufferDesc);
 				}
 			}
+			
+			// Blur
+			{
+				BufferLoadDesc bufferDesc = {};
+				bufferDesc = {};
+				bufferDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+				bufferDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+				bufferDesc.mDesc.mSize = sizeof(blurData);
+				bufferDesc.mDesc.mFlags = BUFFER_CREATION_FLAG_PERSISTENT_MAP_BIT;
+				bufferDesc.pData = NULL;
+
+				for (uint32_t i = 0; i < gImageCount; ++i)
+				{
+					bufferDesc.ppBuffer = &pBlurBuffer[i];
+					addResource(&bufferDesc);
+				}
+			}
 		}
 
 		CreateLightsBuffer();
@@ -615,6 +634,7 @@ public:
 		{
 			removeResource(pUniformBuffers[i]);
 			removeResource(pToneMappingBuffer[i]);
+			removeResource(pBlurBuffer[i]);
 		}
 
 		removeResource(pInstancePositionBuffer);
@@ -825,6 +845,10 @@ public:
 		// Update tone mapping uniform buffers
 		BufferUpdateDesc toneBuffUpdate = { pToneMappingBuffer[gFrameIndex], &toneMappingData };
 		updateResource(&toneBuffUpdate);
+		
+		// Update tone mapping uniform buffers
+		BufferUpdateDesc blurBuffUpdate = { pBlurBuffer[gFrameIndex], &blurData };
+		updateResource(&blurBuffUpdate);
 
 		// Update light uniform buffers
 		BufferUpdateDesc lightBuffUpdate = { pLightBuffer, &lightData };
@@ -1512,7 +1536,9 @@ public:
 					DescriptorData params[2] = {};
 					params[0].pName = "Texture";
 					params[0].ppTextures = &renderTargets.bloom[i]->pTexture;
-					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::BlurV]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
+					params[1].pName = "BlurData";
+					params[1].ppBuffers = &pBlurBuffer[i];
+					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::BlurV]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 2, params);
 				}
 			}
 		}
@@ -1526,7 +1552,9 @@ public:
 					DescriptorData params[2] = {};
 					params[0].pName = "Texture";
 					params[0].ppTextures = &renderTargets.blurred[i]->pTexture;
-					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::BlurH]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 1, params);
+					params[1].pName = "BlurData";
+					params[1].ppBuffers = &pBlurBuffer[i];
+					updateDescriptorSet(pRenderer, i, RenderPasses[RenderPass::BlurH]->pDescriptorSets[DESCRIPTOR_UPDATE_FREQ_PER_FRAME], 2, params);
 				}
 			}
 		}

@@ -7,6 +7,11 @@ struct VSOutput
 SamplerState	uSampler0	: register(s0);
 Texture2D		Texture		: register(t0, UPDATE_FREQ_PER_FRAME);
 
+cbuffer BlurData : register(b0, UPDATE_FREQ_PER_FRAME)
+{
+	float strength;
+};
+
 float4 main(VSOutput input) : SV_TARGET
 {    
 	// Horizontal Blurr
@@ -25,8 +30,8 @@ float4 main(VSOutput input) : SV_TARGET
 
 	for(int i = 0; i < 5; ++i)
 	{
-		result += Texture.Sample(uSampler0, input.UV + float2(0.0f, tex_offset.y * i)).rgb * weight[i] * 1.5f;
-		result += Texture.Sample(uSampler0, input.UV - float2(0.0f, tex_offset.y * i)).rgb * weight[i] * 1.5f;
+		result += Texture.Sample(uSampler0, input.UV + float2(0.0f, tex_offset.y * i)).rgb * weight[i] * strength;
+		result += Texture.Sample(uSampler0, input.UV - float2(0.0f, tex_offset.y * i)).rgb * weight[i] * strength;
 	}
 	
 	return float4(result, 1.0);

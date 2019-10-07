@@ -6,6 +6,11 @@ struct VSOutput
     float2 UV		: TEXCOORD0;
 };
 
+cbuffer BlurData : register(b0, UPDATE_FREQ_PER_FRAME)
+{
+	float strength;
+};
+
 SamplerState	uSampler0	: register(s0);
 Texture2D		Texture		: register(t0, UPDATE_FREQ_PER_FRAME);
 
@@ -27,8 +32,8 @@ float4 main(VSOutput input) : SV_TARGET
 
 	for(int i = 0; i < 5; ++i)
 	{
-		result += Texture.Sample(uSampler0, input.UV + float2(tex_offset.x * i, 0.0f)).rgb * weight[i] * 1.5f;
-		result += Texture.Sample(uSampler0, input.UV - float2(tex_offset.x * i, 0.0f)).rgb * weight[i] * 1.5f;
+		result += Texture.Sample(uSampler0, input.UV + float2(tex_offset.x * i, 0.0f)).rgb * weight[i] * strength;
+		result += Texture.Sample(uSampler0, input.UV - float2(tex_offset.x * i, 0.0f)).rgb * weight[i] * strength;
 	}
 	
 	return float4(result, 1.0);
