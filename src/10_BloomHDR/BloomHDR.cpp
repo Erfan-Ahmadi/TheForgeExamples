@@ -972,7 +972,11 @@ public:
 			{
 				cmd = RenderPasses[RenderPass::BlurV]->ppCmds[gFrameIndex * gNumBlurPasses + i];
 				beginCmd(cmd);
+
+				if (i == 0)
+					cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Blur Passess", true);
 				{
+
 					cmdBeginGpuTimestampQuery(cmd, pGpuProfiler, "Vertical Blur Pass", true);
 					{
 						TextureBarrier textureBarriers[2] = {
@@ -1045,6 +1049,8 @@ public:
 					}
 					cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 				}
+				if (i == gNumBlurPasses - 1)
+					cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 				endCmd(cmd);
 				allCmds[3 + i * 2] = cmd;
 			}
