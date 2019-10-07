@@ -12,11 +12,12 @@ struct VSInput
     float2 TexCoord : TEXCOORD;
 };
 
-struct VSOutput {
-	float4 Normal	: NORMAL;
-	float4 FragPos	: POSITION;
-	float4 Position : SV_POSITION;
-    float2 TexCoord : TEXCOORD;
+struct VSOutput 
+{
+	float4 Position		: SV_POSITION;
+	float4 Normal		: NORMAL;
+	float4 FragPos		: POSITION;
+    float2 TexCoord		: TEXCOORD;
 };
 
  float4x4 inverse(float4x4 input)

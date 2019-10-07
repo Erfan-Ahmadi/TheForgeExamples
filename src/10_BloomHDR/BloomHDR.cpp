@@ -11,20 +11,20 @@
 #include "Common_3/Tools/AssimpImporter/AssimpImporter.h"
 #include "Common_3/OS/Interfaces/IMemory.h"
 
+//stbi
+#include "Common_3/ThirdParty/OpenSource/Nothings/stb_image.h"
+
 constexpr size_t gDirectionalLights = 1;
 constexpr size_t gMaxDirectionalLights = 1;
 static_assert(gDirectionalLights <= gMaxDirectionalLights, "");
 
-constexpr size_t gPointLights = 2;
+constexpr size_t gPointLights = 1;
 constexpr size_t gMaxPointLights = 8;
 static_assert(gPointLights <= gMaxPointLights, "");
 
 constexpr size_t gSpotLights = 1;
 constexpr size_t gMaxSpotLights = 8;
 static_assert(gSpotLights <= gMaxSpotLights, "");
-
-// should be in sync with shader definitions
-constexpr size_t bloom_dim = 256;
 
 const uint32_t	gImageCount = 3;
 
@@ -245,10 +245,21 @@ const char* pszBases[FSR_Count] = {
 	"../../../../../The-Forge/Middleware_3/UI/",									// FSR_MIDDLEWARE_UI
 };
 
-bool gPauseLights = false;
 
-constexpr size_t gNumBlurPasses = 2;
+struct
+{
+	float blurStrength = 1.5f;
+} blurData;
+
+uint32_t gUserNumBlurPasses = 1;
+
+// should be in sync with shader definitions
+constexpr size_t bloom_dim = 256;
+
+constexpr size_t gNumBlurPasses = 4;
 constexpr size_t gNumRenderPasses = 3 + gNumBlurPasses * 2;
+
+bool gPauseLights = false;
 
 class BloomHDR : public IApp
 {
@@ -521,10 +532,12 @@ public:
 		pGui = gAppUI.AddGuiComponent("Micro profiler", &guiDesc);
 
 		pGui->AddWidget(CheckboxWidget("Toggle Micro Profiler", &gMicroProfiler));
-		pGui->AddWidget(CheckboxWidget("ToneMapping", &toneMappingData.tonemap));
+		//pGui->AddWidget(CheckboxWidget("ToneMapping", &toneMappingData.tonemap));
+		pGui->AddWidget(SliderFloatWidget("Blur Strength", &blurData.blurStrength, 0.0f, 10.0f, 0.5f, "%.2f"));
+		pGui->AddWidget(SliderUintWidget("Number of Blur Passes", &gUserNumBlurPasses, 0, 4, 1, "%d"));
+		pGui->AddWidget(SliderFloatWidget("Bloom Alpha", &toneMappingData.bloomLevel, 0.0f, 1.0f, 0.05f, "%.2f"));
 		pGui->AddWidget(SliderFloatWidget("Exposure", &toneMappingData.exposure, 0.1f, 10.0f, 0.25f, "%.2f"));
 		pGui->AddWidget(SliderFloatWidget("Gamma", &toneMappingData.gamma, 1.0f, 3.0f, 0.6f, "%.2f"));
-		pGui->AddWidget(SliderFloatWidget("Bloom Level", &toneMappingData.bloomLevel, 0.0f, 1.0f, 0.05f, "%.2f"));
 		pGui->AddWidget(CheckboxWidget("Pause Lights", &gPauseLights));
 
 		// Camera
@@ -745,7 +758,7 @@ public:
 		// Update Instance Data
 		gUniformData.pToWorld = mat4::translation(Vector3(0.0f, -1, 6)) *
 			//mat4::rotationY(currentTime) *
-			mat4::scale(Vector3(0.05f));
+			mat4::scale(Vector3(1.00f));
 
 		viewMat.setTranslation(vec3(0));
 
@@ -755,17 +768,11 @@ public:
 		directionalLights[0].specular = float3{ 0.5f, 0.5f, 0.5f };
 		lightData.numDirectionalLights = 0;
 
-		pointLights[0].position = float3{ 0.0f + 4 * abs(cos(2 * currentLightTime)), 1.0f, 4.0f };
-		pointLights[0].ambient = float3{ 0.02f, 0.02f, 0.02f };
+		pointLights[0].position = float3{ 0.0f + 4 * sin(2 * currentLightTime), 1.0f, 6.0f + 4 * cos(2 * currentLightTime) };
+		pointLights[0].ambient = float3{ 0.01f, 0.01f, 0.01f };
 		pointLights[0].diffuse = float3{ 1.0f, 2.0f, 2.0f };
 		pointLights[0].specular = float3{ 1.0f, 3.0f, 3.0f };
-		pointLights[0].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
-
-		pointLights[1].position = float3{ 0.0f - 4 * abs(cos(2 * currentLightTime)), 1.0f, 4.0f };
-		pointLights[1].ambient = float3{ 0.02f, 0.02f, 0.02f };
-		pointLights[1].diffuse = float3{ 1.0f, 0.0f, 2.0f };
-		pointLights[1].specular = float3{ 1.0f, 0.0f, 2.0f };
-		pointLights[1].attenuationParams = float3{ 1.0f, 0.07f, 0.017f };
+		pointLights[0].attenuationParams = float3{ 1.0f, 0.35f, 0.044f };
 		lightData.numPointLights = gPointLights;
 
 		for (int i = 0; i < gPointLights; ++i)
@@ -799,7 +806,7 @@ public:
 
 	void Draw()
 	{
-		Cmd* allCmds[gNumRenderPasses];
+		eastl::vector<Cmd*> allCmds;
 		acquireNextImage(pRenderer, pSwapChain, pImageAquiredSemaphore, NULL, &gFrameIndex);
 
 		Semaphore* pRenderCompleteSemaphore = pRenderCompleteSemaphores[gFrameIndex];
@@ -912,7 +919,7 @@ public:
 			cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 		}
 		endCmd(cmd);
-		allCmds[0] = cmd;
+		allCmds.push_back(cmd);
 
 		cmd = RenderPasses[RenderPass::BloomDownres]->ppCmds[gFrameIndex];
 		beginCmd(cmd);
@@ -964,11 +971,11 @@ public:
 			cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 		}
 		endCmd(cmd);
-		allCmds[1] = cmd;
+		allCmds.push_back(cmd);
 
 		// Blur Passes
 		{
-			for (int i = 0; i < gNumBlurPasses; ++i)
+			for (int i = 0; i < gUserNumBlurPasses; ++i)
 			{
 				cmd = RenderPasses[RenderPass::BlurV]->ppCmds[gFrameIndex * gNumBlurPasses + i];
 				beginCmd(cmd);
@@ -1011,7 +1018,7 @@ public:
 					cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 				}
 				endCmd(cmd);
-				allCmds[2 + i * 2] = cmd;
+				allCmds.push_back(cmd);
 
 				cmd = RenderPasses[RenderPass::BlurH]->ppCmds[gFrameIndex * gNumBlurPasses + i];
 				beginCmd(cmd);
@@ -1049,10 +1056,10 @@ public:
 					}
 					cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 				}
-				if (i == gNumBlurPasses - 1)
+				if (i == gUserNumBlurPasses - 1)
 					cmdEndGpuTimestampQuery(cmd, pGpuProfiler);
 				endCmd(cmd);
-				allCmds[3 + i * 2] = cmd;
+				allCmds.push_back(cmd);
 			}
 		}
 
@@ -1130,9 +1137,9 @@ public:
 		}
 		cmdEndGpuFrameProfile(cmd, pGpuProfiler);
 		endCmd(cmd);
-		allCmds[gNumRenderPasses - 1] = cmd;
+		allCmds.push_back(cmd);
 
-		queueSubmit(pGraphicsQueue, gNumRenderPasses, allCmds, pRenderCompleteFence, 1, &pImageAquiredSemaphore, 1, &pRenderCompleteSemaphore);
+		queueSubmit(pGraphicsQueue, allCmds.size(), allCmds.data(), pRenderCompleteFence, 1, &pImageAquiredSemaphore, 1, &pRenderCompleteSemaphore);
 
 		queuePresent(pGraphicsQueue, pSwapChain, gFrameIndex, 1, &pRenderCompleteSemaphore);
 
@@ -1613,19 +1620,19 @@ public:
 
 		AssimpImporter importer;
 
-		AssimpImporter::Model lionModel;
+		AssimpImporter::Model model;
 
 		{
-			if (!importer.ImportModel("../../../../art/Meshes/lowpoly/geosphere.obj", &lionModel))
+			if (!importer.ImportModel("../../../../art/Meshes/text.obj", &model))
 			{
 				return false;
 			}
 
-			size_t meshSize = lionModel.mMeshArray.size();
+			size_t meshSize = model.mMeshArray.size();
 
 			for (size_t i = 0; i < meshSize; ++i)
 			{
-				AssimpImporter::Mesh subMesh = lionModel.mMeshArray[i];
+				AssimpImporter::Mesh subMesh = model.mMeshArray[i];
 
 				MeshBatch* pMeshBatch = (MeshBatch*)conf_placement_new<MeshBatch>(conf_calloc(1, sizeof(MeshBatch)));
 
