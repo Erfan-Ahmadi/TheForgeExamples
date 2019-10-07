@@ -253,7 +253,7 @@ struct
 
 Buffer* pBlurBuffer[gImageCount];
 
-uint32_t gUserNumBlurPasses = 1;
+uint32_t gUserNumBlurPasses = 2;
 
 // should be in sync with shader definitions
 constexpr size_t bloom_dim = 256;
@@ -778,7 +778,7 @@ public:
 		// Update Instance Data
 		gUniformData.pToWorld = mat4::translation(Vector3(0.0f, -1, 6)) *
 			//mat4::rotationY(currentTime) *
-			mat4::scale(Vector3(1.00f));
+			mat4::scale(Vector3(1.5f));
 
 		viewMat.setTranslation(vec3(0));
 
@@ -1651,7 +1651,7 @@ public:
 		AssimpImporter::Model model;
 
 		{
-			if (!importer.ImportModel("../../../../art/Meshes/text.obj", &model))
+			if (!importer.ImportModel("../../../../art/Meshes/bunny.obj", &model))
 			{
 				return false;
 			}
