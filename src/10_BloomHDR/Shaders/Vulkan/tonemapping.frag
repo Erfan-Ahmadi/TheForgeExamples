@@ -21,9 +21,6 @@ layout(location = 0) out vec4 outColor;
 void main()
 {
 	vec3 bloom = texture(sampler2D(BloomTexture, uSampler0), UV).rgb;
-	outColor = vec4(bloom, 1.0f);
-	return;
-
 	const float gamma = inGamma;
   
 	vec4 hdrColor = texture(sampler2D(HdrTexture, uSampler0), UV) + bloomLevel * vec4(bloom, 1.0f);
