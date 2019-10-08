@@ -17,9 +17,9 @@
   - [x] [Tessellation](https://github.com/Erfan-Ahmadi/the_forge_learn/tree/master/src/09_Tessellation)
     - [x] Passthrough
     - [x] PN-Triangles
-  - [x] Bloom
-  - [x] HDR Rendering
-  - [x] Gamma Correction
+  - [x] [Bloom](https://github.com/Erfan-Ahmadi/TheForgeExamples/tree/master/src/10_BloomHDR)
+  - [x] [HDR Rendering](https://github.com/Erfan-Ahmadi/TheForgeExamples/tree/master/src/10_BloomHDR)
+  - [x] [Gamma Correction](https://github.com/Erfan-Ahmadi/TheForgeExamples/tree/master/src/10_BloomHDR)
   - [ ] Dynamic Tone Mapping / HDR
   - [ ] Environmental Mapping
     - [ ] Cube Map Reflections
