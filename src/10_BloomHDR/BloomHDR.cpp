@@ -508,7 +508,7 @@ public:
 					addResource(&bufferDesc);
 				}
 			}
-			
+
 			// Blur
 			{
 				BufferLoadDesc bufferDesc = {};
@@ -845,7 +845,7 @@ public:
 		// Update tone mapping uniform buffers
 		BufferUpdateDesc toneBuffUpdate = { pToneMappingBuffer[gFrameIndex], &toneMappingData };
 		updateResource(&toneBuffUpdate);
-		
+
 		// Update tone mapping uniform buffers
 		BufferUpdateDesc blurBuffUpdate = { pBlurBuffer[gFrameIndex], &blurData };
 		updateResource(&blurBuffUpdate);
@@ -923,7 +923,7 @@ public:
 					for (int i = 0; i < sceneData.scene.size(); ++i)
 					{
 						Buffer* pVertexBuffers[] = { sceneData.scene[i]->pPositionStream, sceneData.scene[i]->pNormalStream, sceneData.scene[i]->pUVStream };
-						cmdBindVertexBuffer(cmd, 2, pVertexBuffers, NULL);
+						cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
 						cmdBindIndexBuffer(cmd, sceneData.scene[i]->pIndicesStream, 0);
 						cmdDrawIndexed(cmd, sceneData.scene[0]->mCountIndices, 0, 0);
 					}
@@ -986,7 +986,7 @@ public:
 					for (int i = 0; i < sceneData.scene.size(); ++i)
 					{
 						Buffer* pVertexBuffers[] = { sceneData.scene[i]->pPositionStream, sceneData.scene[i]->pNormalStream, sceneData.scene[i]->pUVStream };
-						cmdBindVertexBuffer(cmd, 2, pVertexBuffers, NULL);
+						cmdBindVertexBuffer(cmd, 3, pVertexBuffers, NULL);
 						cmdBindIndexBuffer(cmd, sceneData.scene[i]->pIndicesStream, 0);
 						cmdDrawIndexed(cmd, sceneData.scene[0]->mCountIndices, 0, 0);
 					}
@@ -1450,7 +1450,6 @@ public:
 			pipelineSettings.pColorFormats = &pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mFormat;
 			pipelineSettings.mSampleCount = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleCount;
 			pipelineSettings.mSampleQuality = pSwapChain->ppSwapchainRenderTargets[0]->mDesc.mSampleQuality;
-			pipelineSettings.mDepthStencilFormat = pDepthBuffer->mDesc.mFormat;
 			pipelineSettings.pRootSignature = RenderPasses[RenderPass::ToneMapping]->pRootSignature;
 			pipelineSettings.pShaderProgram = RenderPasses[RenderPass::ToneMapping]->pShader;
 			pipelineSettings.pVertexLayout = NULL;
